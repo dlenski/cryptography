@@ -8,12 +8,16 @@ use cryptography_x509_validation::{
     policy::{Policy, Subject},
     types::{DNSName, IPAddress},
 };
+use pyo3::IntoPy;
 
-use crate::error::{CryptographyError, CryptographyResult};
 use crate::types;
 use crate::x509::certificate::Certificate as PyCertificate;
 use crate::x509::common::{datetime_now, datetime_to_py, py_to_datetime};
 use crate::x509::sign;
+use crate::{
+    error::{CryptographyError, CryptographyResult},
+    exceptions::VerificationError,
+};
 
 pub(crate) struct PyCryptoOps {}
 
@@ -76,6 +80,8 @@ struct PyServerVerifier {
     #[pyo3(get, name = "subject")]
     py_subject: pyo3::Py<pyo3::PyAny>,
     policy: OwnedPolicy,
+    #[pyo3(get)]
+    store: pyo3::Py<PyStore>,
 }
 
 impl PyServerVerifier {
@@ -89,6 +95,20 @@ impl PyServerVerifier {
     #[getter]
     fn validation_time<'p>(&self, py: pyo3::Python<'p>) -> pyo3::PyResult<&'p pyo3::PyAny> {
         datetime_to_py(py, &self.as_policy().validation_time)
+    }
+
+    #[getter]
+    fn max_chain_depth(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<pyo3::PyObject> {
+        Ok(self.as_policy().max_chain_depth.into_py(py))
+    }
+
+    fn verify<'p>(
+        &self,
+        _py: pyo3::Python<'p>,
+        _leaf: &PyCertificate,
+        _intermediates: &'p pyo3::types::PyList,
+    ) -> CryptographyResult<Vec<PyCertificate>> {
+        Err(VerificationError::new_err("unimplemented").into())
     }
 }
 
@@ -121,19 +141,19 @@ fn build_subject_owner(
 fn build_subject<'a>(
     py: pyo3::Python<'_>,
     subject: &'a SubjectOwner,
-) -> pyo3::PyResult<Option<Subject<'a>>> {
+) -> pyo3::PyResult<Subject<'a>> {
     match subject {
         SubjectOwner::DNSName(dns_name) => {
             let dns_name = DNSName::new(dns_name)
                 .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("invalid domain name"))?;
 
-            Ok(Some(Subject::DNS(dns_name)))
+            Ok(Subject::DNS(dns_name))
         }
         SubjectOwner::IPAddress(ip_addr) => {
             let ip_addr = IPAddress::from_bytes(ip_addr.as_bytes(py))
                 .ok_or_else(|| pyo3::exceptions::PyValueError::new_err("invalid IP address"))?;
 
-            Ok(Some(Subject::IP(ip_addr)))
+            Ok(Subject::IP(ip_addr))
         }
     }
 }
@@ -142,7 +162,9 @@ fn build_subject<'a>(
 fn create_server_verifier(
     py: pyo3::Python<'_>,
     subject: pyo3::Py<pyo3::PyAny>,
+    store: pyo3::Py<PyStore>,
     time: Option<&pyo3::PyAny>,
+    max_chain_depth: Option<u8>,
 ) -> pyo3::PyResult<PyServerVerifier> {
     let time = match time {
         Some(time) => py_to_datetime(py, time)?,
@@ -156,12 +178,14 @@ fn create_server_verifier(
             PyCryptoOps {},
             subject,
             time,
+            max_chain_depth,
         )))
     })?;
 
     Ok(PyServerVerifier {
         py_subject: subject,
         policy,
+        store,
     })
 }
 

@@ -52,12 +52,6 @@ def cryptography_has_ed448() -> list[str]:
     ]
 
 
-def cryptography_has_ed25519() -> list[str]:
-    return [
-        "EVP_PKEY_ED25519",
-    ]
-
-
 def cryptography_has_ssl_sigalgs() -> list[str]:
     return [
         "SSL_CTX_set1_sigalgs_list",
@@ -180,7 +174,6 @@ def cryptography_has_pkcs7_funcs() -> list[str]:
     return [
         "PKCS7_verify",
         "SMIME_read_PKCS7",
-        "PKCS7_get0_signers",
     ]
 
 
@@ -238,7 +231,6 @@ CONDITIONAL_NAMES = {
         cryptography_has_x509_store_ctx_get_issuer
     ),
     "Cryptography_HAS_ED448": cryptography_has_ed448,
-    "Cryptography_HAS_ED25519": cryptography_has_ed25519,
     "Cryptography_HAS_SIGALGS": cryptography_has_ssl_sigalgs,
     "Cryptography_HAS_PSK": cryptography_has_psk,
     "Cryptography_HAS_PSK_TLSv1_3": cryptography_has_psk_tlsv13,

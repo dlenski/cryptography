@@ -7,26 +7,24 @@
 
 alabaster==0.7.13
     # via sphinx
-argcomplete==3.1.2
+argcomplete==3.1.6; python_version >= "3.8"
     # via nox
-babel==2.13.0
+babel==2.13.1
     # via sphinx
-black==23.10.0
-    # via cryptography (pyproject.toml)
 bleach==6.1.0
     # via readme-renderer
 build==1.0.3
     # via
     #   check-sdist
     #   cryptography (pyproject.toml)
-certifi==2023.7.22
+certifi==2023.11.17
     # via requests
-charset-normalizer==3.3.0
+charset-normalizer==3.3.2
     # via requests
 check-sdist==0.1.3
     # via cryptography (pyproject.toml)
 click==8.1.7
-    # via black
+    # via cryptography (pyproject.toml)
 colorlog==6.7.0
     # via nox
 coverage==7.3.2; python_version >= "3.8"
@@ -38,11 +36,11 @@ docutils==0.18.1
     #   readme-renderer
     #   sphinx
     #   sphinx-rtd-theme
-exceptiongroup==1.1.3
+exceptiongroup==1.2.0
     # via pytest
 execnet==2.0.2
     # via pytest-xdist
-filelock==3.12.4; python_version >= "3.8"
+filelock==3.13.1; python_version >= "3.8"
     # via virtualenv
 idna==3.4
     # via requests
@@ -58,7 +56,7 @@ jaraco-classes==3.3.0
     # via keyring
 jinja2==3.1.2
     # via sphinx
-keyring==24.2.0
+keyring==24.3.0
     # via twine
 markdown-it-py==3.0.0
     # via rich
@@ -68,30 +66,26 @@ mdurl==0.1.2
     # via markdown-it-py
 more-itertools==10.1.0
     # via jaraco-classes
-mypy==1.6.0
+mypy==1.7.0
     # via cryptography (pyproject.toml)
 mypy-extensions==1.0.0
     # via
-    #   black
     #   mypy
 nox==2023.4.22
     # via cryptography (pyproject.toml)
 packaging==23.2
     # via
-    #   black
     #   build
     #   nox
     #   pytest
     #   sphinx
 pathspec==0.11.2
     # via
-    #   black
     #   check-sdist
 pkginfo==1.9.6
     # via twine
-platformdirs==3.11.0
+platformdirs==4.0.0
     # via
-    #   black
     #   virtualenv
 pluggy==1.3.0; python_version >= "3.8"
     # via pytest
@@ -103,14 +97,14 @@ pyenchant==3.2.2
     # via
     #   cryptography (pyproject.toml)
     #   sphinxcontrib-spelling
-pygments==2.16.1
+pygments==2.17.2
     # via
     #   readme-renderer
     #   rich
     #   sphinx
 pyproject-hooks==1.0.0
     # via build
-pytest==7.4.2
+pytest==7.4.3
     # via
     #   cryptography (pyproject.toml)
     #   pytest-benchmark
@@ -123,7 +117,7 @@ pytest-cov==4.1.0
     # via cryptography (pyproject.toml)
 pytest-randomly==3.15.0
     # via cryptography (pyproject.toml)
-pytest-xdist==3.3.1
+pytest-xdist==3.5.0
     # via cryptography (pyproject.toml)
 readme-renderer==42.0
     # via twine
@@ -136,9 +130,9 @@ requests-toolbelt==1.0.0
     # via twine
 rfc3986==2.0.0
     # via twine
-rich==13.6.0
+rich==13.7.0
     # via twine
-ruff==0.1.0
+ruff==0.1.6
     # via cryptography (pyproject.toml)
 six==1.16.0
     # via bleach
@@ -170,7 +164,6 @@ sphinxcontrib-spelling==8.0.0
     # via cryptography (pyproject.toml)
 tomli==2.0.1
     # via
-    #   black
     #   build
     #   check-manifest
     #   coverage
@@ -181,11 +174,11 @@ twine==4.0.2
     # via cryptography (pyproject.toml)
 typing-extensions==4.8.0; python_version >= "3.8"
     # via mypy
-urllib3==2.0.7
+urllib3==2.1.0
     # via
     #   requests
     #   twine
-virtualenv==20.24.5
+virtualenv==20.24.7
     # via nox
 webencodings==0.5.1
     # via bleach

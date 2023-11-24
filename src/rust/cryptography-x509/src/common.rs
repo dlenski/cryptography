@@ -4,7 +4,6 @@
 
 use crate::oid;
 use asn1::Asn1DefinedByWritable;
-use std::marker::PhantomData;
 
 #[derive(asn1::Asn1Read, asn1::Asn1Write, PartialEq, Hash, Clone, Eq, Debug)]
 pub struct AlgorithmIdentifier<'a> {
@@ -44,6 +43,13 @@ pub enum AlgorithmParameters<'a> {
     Ed25519,
     #[defined_by(oid::ED448_OID)]
     Ed448,
+
+    // These encodings are only used in SPKI AlgorithmIdentifiers.
+    #[defined_by(oid::EC_OID)]
+    Ec(EcParameters<'a>),
+
+    #[defined_by(oid::RSA_OID)]
+    Rsa(Option<asn1::Null>),
 
     // These ECDSA algorithms should have no parameters,
     // but Java 11 (up to at least 11.0.19) encodes them
@@ -173,30 +179,30 @@ impl Time {
 }
 
 #[derive(Hash, PartialEq, Eq, Clone)]
-pub enum Asn1ReadableOrWritable<'a, T, U> {
-    Read(T, PhantomData<&'a ()>),
-    Write(U, PhantomData<&'a ()>),
+pub enum Asn1ReadableOrWritable<T, U> {
+    Read(T),
+    Write(U),
 }
 
-impl<'a, T, U> Asn1ReadableOrWritable<'a, T, U> {
+impl<T, U> Asn1ReadableOrWritable<T, U> {
     pub fn new_read(v: T) -> Self {
-        Asn1ReadableOrWritable::Read(v, PhantomData)
+        Asn1ReadableOrWritable::Read(v)
     }
 
     pub fn new_write(v: U) -> Self {
-        Asn1ReadableOrWritable::Write(v, PhantomData)
+        Asn1ReadableOrWritable::Write(v)
     }
 
     pub fn unwrap_read(&self) -> &T {
         match self {
-            Asn1ReadableOrWritable::Read(v, _) => v,
-            Asn1ReadableOrWritable::Write(_, _) => panic!("unwrap_read called on a Write value"),
+            Asn1ReadableOrWritable::Read(v) => v,
+            Asn1ReadableOrWritable::Write(_) => panic!("unwrap_read called on a Write value"),
         }
     }
 }
 
 impl<'a, T: asn1::SimpleAsn1Readable<'a>, U> asn1::SimpleAsn1Readable<'a>
-    for Asn1ReadableOrWritable<'a, T, U>
+    for Asn1ReadableOrWritable<T, U>
 {
     const TAG: asn1::Tag = T::TAG;
     fn parse_data(data: &'a [u8]) -> asn1::ParseResult<Self> {
@@ -204,14 +210,14 @@ impl<'a, T: asn1::SimpleAsn1Readable<'a>, U> asn1::SimpleAsn1Readable<'a>
     }
 }
 
-impl<'a, T: asn1::SimpleAsn1Writable, U: asn1::SimpleAsn1Writable> asn1::SimpleAsn1Writable
-    for Asn1ReadableOrWritable<'a, T, U>
+impl<T: asn1::SimpleAsn1Writable, U: asn1::SimpleAsn1Writable> asn1::SimpleAsn1Writable
+    for Asn1ReadableOrWritable<T, U>
 {
     const TAG: asn1::Tag = U::TAG;
     fn write_data(&self, w: &mut asn1::WriteBuf) -> asn1::WriteResult {
         match self {
-            Asn1ReadableOrWritable::Read(v, _) => T::write_data(v, w),
-            Asn1ReadableOrWritable::Write(v, _) => U::write_data(v, w),
+            Asn1ReadableOrWritable::Read(v) => T::write_data(v, w),
+            Asn1ReadableOrWritable::Write(v) => U::write_data(v, w),
         }
     }
 }
@@ -280,6 +286,21 @@ pub const PSS_SHA512_MASK_GEN_ALG: MaskGenAlgorithm<'_> = MaskGenAlgorithm {
     oid: oid::MGF1_OID,
     params: PSS_SHA512_HASH_ALG,
 };
+
+// From RFC 5480 section 2.1.1:
+// ECParameters ::= CHOICE {
+//     namedCurve         OBJECT IDENTIFIER
+//     -- implicitCurve   NULL
+//     -- specifiedCurve  SpecifiedECDomain }
+//
+// Only the namedCurve form may appear in PKIX. Other forms may be found in
+// other PKIs.
+#[derive(asn1::Asn1Read, asn1::Asn1Write, Hash, Clone, PartialEq, Eq, Debug)]
+pub enum EcParameters<'a> {
+    NamedCurve(asn1::ObjectIdentifier),
+    ImplicitCurve(asn1::Null),
+    SpecifiedCurve(asn1::Sequence<'a>),
+}
 
 // From RFC 4055 section 3.1:
 // RSASSA-PSS-params  ::=  SEQUENCE  {

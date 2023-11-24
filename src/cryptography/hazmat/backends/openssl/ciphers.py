@@ -17,7 +17,7 @@ if typing.TYPE_CHECKING:
 class _CipherContext:
     _ENCRYPT = 1
     _DECRYPT = 0
-    _MAX_CHUNK_SIZE = 2**30 - 1
+    _MAX_CHUNK_SIZE = 2**29
 
     def __init__(self, backend: Backend, cipher, mode, operation: int) -> None:
         self._backend = backend
@@ -149,8 +149,9 @@ class _CipherContext:
         total_data_len = len(data)
         if len(buf) < (total_data_len + self._block_size_bytes - 1):
             raise ValueError(
-                "buffer must be at least {} bytes for this "
-                "payload".format(len(data) + self._block_size_bytes - 1)
+                "buffer must be at least {} bytes for this payload".format(
+                    len(data) + self._block_size_bytes - 1
+                )
             )
 
         data_processed = 0

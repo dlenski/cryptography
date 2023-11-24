@@ -14,6 +14,11 @@ import uuid
 
 import nox
 
+try:
+    import tomllib
+except ImportError:
+    import tomli as tomllib  # type: ignore[import-not-found,no-redef]
+
 nox.options.reuse_existing_virtualenvs = True
 
 
@@ -25,6 +30,11 @@ def install(session: nox.Session, *args: str) -> None:
         *args,
         silent=False,
     )
+
+
+def load_pyproject_toml() -> dict:
+    with (pathlib.Path(__file__).parent / "pyproject.toml").open("rb") as f:
+        return tomllib.load(f)
 
 
 @nox.session
@@ -152,11 +162,22 @@ def docs_linkcheck(session: nox.Session) -> None:
 
 @nox.session
 def flake(session: nox.Session) -> None:
-    install(session, ".[pep8test,test,ssh,nox]")
+    # TODO: Ideally there'd be a pip flag to install just our dependencies,
+    # but not install us.
+    pyproject_data = load_pyproject_toml()
+    install(
+        session,
+        *pyproject_data["build-system"]["requires"],
+        *pyproject_data["project"]["optional-dependencies"]["pep8test"],
+        *pyproject_data["project"]["optional-dependencies"]["test"],
+        *pyproject_data["project"]["optional-dependencies"]["ssh"],
+        *pyproject_data["project"]["optional-dependencies"]["nox"],
+    )
+    install(session, "-e", "vectors/")
 
     session.run("ruff", ".")
-    session.run("black", "--check", ".")
-    session.run("check-sdist")
+    session.run("ruff", "format", "--check", ".")
+    session.run("check-sdist", "--no-isolation")
     session.run(
         "mypy",
         "src/cryptography/",
@@ -181,10 +202,10 @@ def rust(session: nox.Session) -> None:
         }
     )
 
-    # Just install the dependencies needed for the Rust build.rs
     # TODO: Ideally there'd be a pip flag to install just our dependencies,
     # but not install us.
-    install(session, "cffi", "setuptools")
+    pyproject_data = load_pyproject_toml()
+    install(session, *pyproject_data["build-system"]["requires"])
 
     with session.chdir("src/rust/"):
         session.run("cargo", "fmt", "--all", "--", "--check", external=True)

@@ -38,7 +38,9 @@ class TestHMAC:
     def test_hmac_algorithm_instance(self, backend):
         with pytest.raises(TypeError):
             hmac.HMAC(
-                b"key", hashes.SHA1, backend=backend  # type: ignore[arg-type]
+                b"key",
+                hashes.SHA1,  # type: ignore[arg-type]
+                backend=backend,
             )
 
     def test_raises_after_finalize(self, backend):
@@ -80,6 +82,9 @@ class TestHMAC:
     def test_unsupported_hash(self, backend):
         with raises_unsupported_algorithm(_Reasons.UNSUPPORTED_HASH):
             hmac.HMAC(b"key", DummyHashAlgorithm(), backend)
+
+        with raises_unsupported_algorithm(_Reasons.UNSUPPORTED_HASH):
+            hmac.HMAC(b"key", hashes.SHAKE256(digest_size=256), backend)
 
     def test_buffer_protocol(self, backend):
         key = bytearray(b"2b7e151628aed2a6abf7158809cf4f3c")

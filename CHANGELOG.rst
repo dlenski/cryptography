@@ -8,6 +8,7 @@ Changelog
 
 .. note:: This version is not yet released and is under active development.
 
+* **BACKWARDS INCOMPATIBLE:** Dropped support for LibreSSL < 3.7.
 * Parsing SSH certificates no longer permits malformed critical options with
   values, as documented in the 41.0.2 release notes.
 * Updated the minimum supported Rust version (MSRV) to 1.63.0, from 1.56.0.
@@ -37,7 +38,22 @@ Changelog
   :meth:`~cryptography.x509.CertificateRevocationList.next_update`,
   :meth:`~cryptography.x509.CertificateRevocationList.last_update`
   in favor of the new timezone-aware variants mentioned above.
+* Added support for
+  :class:`~cryptography.hazmat.primitives.ciphers.algorithms.ChaCha20`
+  on LibreSSL.
+* Added support for RSA PSS signatures in PKCS7 with
+  :meth:`~cryptography.hazmat.primitives.serialization.pkcs7.PKCS7SignatureBuilder.add_signer`.
+* In the next release (43.0.0) of cryptography, loading an X.509 certificate
+  with a negative serial number will raise an exception. This has been
+  deprecated since 36.0.0.
 
+.. _v41-0-5:
+
+41.0.5 - 2023-10-24
+~~~~~~~~~~~~~~~~~~~
+
+* Updated Windows, macOS, and Linux wheels to be compiled with OpenSSL 3.1.4.
+* Added a function to support an upcoming ``pyOpenSSL`` release.
 
 .. _v41-0-4:
 

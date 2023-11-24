@@ -5,6 +5,12 @@
 #![forbid(unsafe_code)]
 #![deny(rust_2018_idioms, clippy::undocumented_unsafe_blocks)]
 
+pub mod certificate;
 pub mod ops;
 pub mod policy;
+pub mod trust_store;
 pub mod types;
+
+pub enum ValidationError {
+    Other(&'static str),
+}

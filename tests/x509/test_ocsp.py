@@ -203,7 +203,10 @@ class TestOCSPRequestBuilder:
         builder = ocsp.OCSPRequestBuilder()
         with pytest.raises(ValueError):
             builder.add_certificate_by_hash(
-                b"0" * 20, b"0" * 20, 1, "notahash"  # type:ignore[arg-type]
+                b"0" * 20,
+                b"0" * 20,
+                1,
+                "notahash",  # type:ignore[arg-type]
             )
         with pytest.raises(ValueError):
             builder.add_certificate_by_hash(
@@ -304,7 +307,7 @@ class TestOCSPRequestBuilder:
         assert req.extensions[0].critical is critical
 
     def test_add_cert_by_hash(self):
-        cert, issuer = _cert_and_issuer()
+        cert, _ = _cert_and_issuer()
         builder = ocsp.OCSPRequestBuilder()
         h = hashes.Hash(hashes.SHA1())
         h.update(cert.issuer.public_bytes())
@@ -516,7 +519,8 @@ class TestOCSPResponseBuilder:
         builder = ocsp.OCSPResponseBuilder()
         with pytest.raises(TypeError):
             builder.add_extension(
-                "notanextension", True  # type: ignore[arg-type]
+                "notanextension",  # type: ignore[arg-type]
+                True,
             )
 
     def test_unsupported_extension(self):
@@ -838,7 +842,7 @@ class TestOCSPResponseBuilder:
     def test_invalid_sign_responder_cert_does_not_match_private_key(self):
         builder = ocsp.OCSPResponseBuilder()
         cert, issuer = _cert_and_issuer()
-        root_cert, private_key = _generate_root()
+        root_cert, _ = _generate_root()
         current_time = (
             datetime.datetime.now(datetime.timezone.utc)
             .replace(tzinfo=None)

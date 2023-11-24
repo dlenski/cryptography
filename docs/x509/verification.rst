@@ -57,6 +57,38 @@ chain building, etc.
 
         The verifier's validation time.
 
+    .. attribute:: max_chain_depth
+
+        :type: :class:`int`
+
+        The verifier's maximum intermediate CA chain depth.
+
+    .. attribute:: store
+
+        :type: :class:`Store`
+
+        The verifier's trust store.
+
+    .. method:: verify(leaf, intermediates)
+
+        Performs path validation on ``leaf``, returning a valid path
+        if one exists. The path is returned in leaf-first order:
+        the first member is ``leaf``, followed by the intermediates used
+        (if any), followed by a member of the ``store``.
+
+        :param leaf: The leaf :class:`~cryptography.x509.Certificate` to validate
+        :param intermediates: A :class:`list` of intermediate :class:`~cryptography.x509.Certificate` to attempt to use
+
+        :returns: A list containing a valid chain from ``leaf`` to a member of :class:`ServerVerifier.store`.
+
+        :raises VerificationError: If a valid chain cannot be constructed
+
+.. class:: VerificationError
+
+    .. versionadded:: 42.0.0
+
+    The error raised when path validation fails.
+
 .. class:: PolicyBuilder
 
     .. versionadded:: 42.0.0
@@ -72,6 +104,28 @@ chain building, etc.
         when :meth:`build_server_verifier` is called.
 
         :param new_time: The :class:`datetime.datetime` to use in the verifier
+
+        :returns: A new instance of :class:`PolicyBuilder`
+
+    .. method:: store(new_store)
+
+        Sets the verifier's trust store.
+
+        :param new_store: The :class:`Store` to use in the verifier
+
+        :returns: A new instance of :class:`PolicyBuilder`
+
+    .. method:: max_chain_depth(new_max_chain_depth)
+
+        Sets the verifier's maximum chain building depth.
+
+        This depth behaves tracks the length of the intermediate CA
+        chain: a maximum depth of zero means that the leaf must be directly
+        issued by a member of the store, a depth of one means no more than
+        one intermediate CA, and so forth. Note that self-issued intermediates
+        don't count against the chain depth, per RFC 5280.
+
+        :param new_max_chain_depth: The maximum depth to allow in the verifier
 
         :returns: A new instance of :class:`PolicyBuilder`
 

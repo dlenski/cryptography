@@ -252,9 +252,12 @@ class TestRSA:
 
     @pytest.mark.supported(
         only_if=lambda backend: (
-            not backend._lib.CRYPTOGRAPHY_IS_LIBRESSL
-            and not backend._lib.CRYPTOGRAPHY_IS_BORINGSSL
-            and not backend._lib.CRYPTOGRAPHY_OPENSSL_LESS_THAN_111E
+            not backend._lib.CRYPTOGRAPHY_IS_BORINGSSL
+            and (
+                not backend._lib.CRYPTOGRAPHY_OPENSSL_LESS_THAN_111E
+                or backend._lib.CRYPTOGRAPHY_IS_LIBRESSL
+                and not backend._lib.CRYPTOGRAPHY_LIBRESSL_LESS_THAN_380
+            )
         ),
         skip_message="Does not support RSA PSS loading",
     )
@@ -291,9 +294,12 @@ class TestRSA:
 
     @pytest.mark.supported(
         only_if=lambda backend: (
-            not backend._lib.CRYPTOGRAPHY_IS_LIBRESSL
-            and not backend._lib.CRYPTOGRAPHY_IS_BORINGSSL
-            and not backend._lib.CRYPTOGRAPHY_OPENSSL_LESS_THAN_111E
+            not backend._lib.CRYPTOGRAPHY_IS_BORINGSSL
+            and (
+                not backend._lib.CRYPTOGRAPHY_OPENSSL_LESS_THAN_111E
+                or backend._lib.CRYPTOGRAPHY_IS_LIBRESSL
+                and not backend._lib.CRYPTOGRAPHY_LIBRESSL_LESS_THAN_380
+            )
         ),
         skip_message="Does not support RSA PSS loading",
     )
@@ -315,9 +321,12 @@ class TestRSA:
 
     @pytest.mark.supported(
         only_if=lambda backend: (
-            backend._lib.CRYPTOGRAPHY_IS_LIBRESSL
-            or backend._lib.CRYPTOGRAPHY_IS_BORINGSSL
-            or backend._lib.CRYPTOGRAPHY_OPENSSL_LESS_THAN_111E
+            backend._lib.CRYPTOGRAPHY_IS_BORINGSSL
+            and (
+                not backend._lib.CRYPTOGRAPHY_OPENSSL_LESS_THAN_111E
+                or backend._lib.CRYPTOGRAPHY_IS_LIBRESSL
+                and not backend._lib.CRYPTOGRAPHY_LIBRESSL_LESS_THAN_380
+            )
         ),
         skip_message="Test requires a backend without RSA-PSS key support",
     )
@@ -1658,7 +1667,8 @@ class TestPSS:
     def test_calculate_max_pss_salt_length(self):
         with pytest.raises(TypeError):
             padding.calculate_max_pss_salt_length(
-                object(), hashes.SHA256()  # type:ignore[arg-type]
+                object(),  # type:ignore[arg-type]
+                hashes.SHA256(),
             )
 
     def test_invalid_salt_length_not_integer(self):
@@ -1711,7 +1721,9 @@ class TestOAEP:
         mgf = padding.MGF1(hashes.SHA1())
         with pytest.raises(TypeError):
             padding.OAEP(
-                mgf=mgf, algorithm=b"", label=None  # type:ignore[arg-type]
+                mgf=mgf,
+                algorithm=b"",  # type:ignore[arg-type]
+                label=None,
             )
 
     def test_algorithm_property(self):
@@ -2180,7 +2192,8 @@ class TestRSAEncryption:
             public_key.encrypt(b"somedata", DummyAsymmetricPadding())
         with pytest.raises(TypeError):
             public_key.encrypt(
-                b"somedata", padding=object()  # type: ignore[arg-type]
+                b"somedata",
+                padding=object(),  # type: ignore[arg-type]
             )
 
     def test_unsupported_oaep_mgf(

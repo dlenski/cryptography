@@ -127,7 +127,7 @@ class TestFernet:
         monkeypatch.setattr(time, "time", pretend.raiser(ValueError))
         assert f.decrypt(token, ttl=None) == pt
 
-    def test_ttl_required_in_decrypt_at_time(self, monkeypatch, backend):
+    def test_ttl_required_in_decrypt_at_time(self, backend):
         f = Fernet(base64.urlsafe_b64encode(b"\x00" * 32), backend=backend)
         pt = b"encrypt me"
         token = f.encrypt(pt)
@@ -148,7 +148,7 @@ class TestFernet:
         with pytest.raises(ValueError):
             Fernet(key, backend=backend)
 
-    def test_extract_timestamp(self, monkeypatch, backend):
+    def test_extract_timestamp(self, backend):
         f = Fernet(base64.urlsafe_b64encode(b"\x00" * 32), backend=backend)
         current_time = 1526138327
         token = f.encrypt_at_time(b"encrypt me", current_time)
@@ -198,7 +198,9 @@ class TestMultiFernet:
             f.decrypt_at_time(token, ttl=1, current_time=102)
         with pytest.raises(ValueError):
             f.decrypt_at_time(
-                token, ttl=None, current_time=100  # type: ignore[arg-type]
+                token,
+                ttl=None,  # type: ignore[arg-type]
+                current_time=100,
             )
 
     def test_no_fernets(self, backend):
@@ -248,7 +250,7 @@ class TestMultiFernet:
         with pytest.raises(InvalidToken):
             mf1.decrypt(rotated)
 
-    def test_rotate_preserves_timestamp(self, backend, monkeypatch):
+    def test_rotate_preserves_timestamp(self, backend):
         f1 = Fernet(base64.urlsafe_b64encode(b"\x00" * 32), backend=backend)
         f2 = Fernet(base64.urlsafe_b64encode(b"\x01" * 32), backend=backend)
 

@@ -13,7 +13,6 @@ from cryptography import utils, x509
 from cryptography.exceptions import UnsupportedAlgorithm, _Reasons
 from cryptography.hazmat.backends.openssl import aead
 from cryptography.hazmat.backends.openssl.ciphers import _CipherContext
-from cryptography.hazmat.backends.openssl.cmac import _CMACContext
 from cryptography.hazmat.bindings._rust import openssl as rust_openssl
 from cryptography.hazmat.bindings.openssl import binding
 from cryptography.hazmat.primitives import hashes, serialization
@@ -31,7 +30,6 @@ from cryptography.hazmat.primitives.asymmetric.types import (
     PublicKeyTypes,
 )
 from cryptography.hazmat.primitives.ciphers import (
-    BlockCipherAlgorithm,
     CipherAlgorithm,
 )
 from cryptography.hazmat.primitives.ciphers.algorithms import (
@@ -264,8 +262,14 @@ class Backend:
         self.register_cipher_adapter(
             TripleDES, ECB, GetCipherByName("des-ede3")
         )
+        # ChaCha20 uses the Long Name "chacha20" in OpenSSL, but in LibreSSL
+        # it uses "chacha"
         self.register_cipher_adapter(
-            ChaCha20, type(None), GetCipherByName("chacha20")
+            ChaCha20,
+            type(None),
+            GetCipherByName(
+                "chacha" if self._lib.CRYPTOGRAPHY_IS_LIBRESSL else "chacha20"
+            ),
         )
         self.register_cipher_adapter(AES, XTS, _get_xts_cipher)
         for mode_cls in [ECB, CBC, OFB, CFB, CTR]:
@@ -388,127 +392,19 @@ class Backend:
         Return the appropriate type of PrivateKey given an evp_pkey cdata
         pointer.
         """
-
-        key_type = self._lib.EVP_PKEY_id(evp_pkey)
-
-        if key_type == self._lib.EVP_PKEY_RSA:
-            return rust_openssl.rsa.private_key_from_ptr(
-                int(self._ffi.cast("uintptr_t", evp_pkey)),
-                unsafe_skip_rsa_key_validation=unsafe_skip_rsa_key_validation,
-            )
-        elif (
-            key_type == self._lib.EVP_PKEY_RSA_PSS
-            and not self._lib.CRYPTOGRAPHY_IS_LIBRESSL
-            and not self._lib.CRYPTOGRAPHY_IS_BORINGSSL
-            and not self._lib.CRYPTOGRAPHY_OPENSSL_LESS_THAN_111E
-        ):
-            # At the moment the way we handle RSA PSS keys is to strip the
-            # PSS constraints from them and treat them as normal RSA keys
-            # Unfortunately the RSA * itself tracks this data so we need to
-            # extract, serialize, and reload it without the constraints.
-            rsa_cdata = self._lib.EVP_PKEY_get1_RSA(evp_pkey)
-            self.openssl_assert(rsa_cdata != self._ffi.NULL)
-            rsa_cdata = self._ffi.gc(rsa_cdata, self._lib.RSA_free)
-            bio = self._create_mem_bio_gc()
-            res = self._lib.i2d_RSAPrivateKey_bio(bio, rsa_cdata)
-            self.openssl_assert(res == 1)
-            return self.load_der_private_key(
-                self._read_mem_bio(bio),
-                password=None,
-                unsafe_skip_rsa_key_validation=unsafe_skip_rsa_key_validation,
-            )
-        elif key_type == self._lib.EVP_PKEY_DSA:
-            return rust_openssl.dsa.private_key_from_ptr(
-                int(self._ffi.cast("uintptr_t", evp_pkey))
-            )
-        elif key_type == self._lib.EVP_PKEY_EC:
-            return rust_openssl.ec.private_key_from_ptr(
-                int(self._ffi.cast("uintptr_t", evp_pkey))
-            )
-        elif key_type in self._dh_types:
-            return rust_openssl.dh.private_key_from_ptr(
-                int(self._ffi.cast("uintptr_t", evp_pkey))
-            )
-        elif key_type == getattr(self._lib, "EVP_PKEY_ED25519", None):
-            # EVP_PKEY_ED25519 is not present in CRYPTOGRAPHY_IS_LIBRESSL
-            return rust_openssl.ed25519.private_key_from_ptr(
-                int(self._ffi.cast("uintptr_t", evp_pkey))
-            )
-        elif key_type == getattr(self._lib, "EVP_PKEY_X448", None):
-            # EVP_PKEY_X448 is not present in CRYPTOGRAPHY_IS_LIBRESSL
-            return rust_openssl.x448.private_key_from_ptr(
-                int(self._ffi.cast("uintptr_t", evp_pkey))
-            )
-        elif key_type == self._lib.EVP_PKEY_X25519:
-            return rust_openssl.x25519.private_key_from_ptr(
-                int(self._ffi.cast("uintptr_t", evp_pkey))
-            )
-        elif key_type == getattr(self._lib, "EVP_PKEY_ED448", None):
-            # EVP_PKEY_ED448 is not present in CRYPTOGRAPHY_IS_LIBRESSL
-            return rust_openssl.ed448.private_key_from_ptr(
-                int(self._ffi.cast("uintptr_t", evp_pkey))
-            )
-        else:
-            raise UnsupportedAlgorithm("Unsupported key type.")
+        return rust_openssl.keys.private_key_from_ptr(
+            int(self._ffi.cast("uintptr_t", evp_pkey)),
+            unsafe_skip_rsa_key_validation=unsafe_skip_rsa_key_validation,
+        )
 
     def _evp_pkey_to_public_key(self, evp_pkey) -> PublicKeyTypes:
         """
         Return the appropriate type of PublicKey given an evp_pkey cdata
         pointer.
         """
-
-        key_type = self._lib.EVP_PKEY_id(evp_pkey)
-
-        if key_type == self._lib.EVP_PKEY_RSA:
-            return rust_openssl.rsa.public_key_from_ptr(
-                int(self._ffi.cast("uintptr_t", evp_pkey))
-            )
-        elif (
-            key_type == self._lib.EVP_PKEY_RSA_PSS
-            and not self._lib.CRYPTOGRAPHY_IS_LIBRESSL
-            and not self._lib.CRYPTOGRAPHY_IS_BORINGSSL
-            and not self._lib.CRYPTOGRAPHY_OPENSSL_LESS_THAN_111E
-        ):
-            rsa_cdata = self._lib.EVP_PKEY_get1_RSA(evp_pkey)
-            self.openssl_assert(rsa_cdata != self._ffi.NULL)
-            rsa_cdata = self._ffi.gc(rsa_cdata, self._lib.RSA_free)
-            bio = self._create_mem_bio_gc()
-            res = self._lib.i2d_RSAPublicKey_bio(bio, rsa_cdata)
-            self.openssl_assert(res == 1)
-            return self.load_der_public_key(self._read_mem_bio(bio))
-        elif key_type == self._lib.EVP_PKEY_DSA:
-            return rust_openssl.dsa.public_key_from_ptr(
-                int(self._ffi.cast("uintptr_t", evp_pkey))
-            )
-        elif key_type == self._lib.EVP_PKEY_EC:
-            return rust_openssl.ec.public_key_from_ptr(
-                int(self._ffi.cast("uintptr_t", evp_pkey))
-            )
-        elif key_type in self._dh_types:
-            return rust_openssl.dh.public_key_from_ptr(
-                int(self._ffi.cast("uintptr_t", evp_pkey))
-            )
-        elif key_type == getattr(self._lib, "EVP_PKEY_ED25519", None):
-            # EVP_PKEY_ED25519 is not present in CRYPTOGRAPHY_IS_LIBRESSL
-            return rust_openssl.ed25519.public_key_from_ptr(
-                int(self._ffi.cast("uintptr_t", evp_pkey))
-            )
-        elif key_type == getattr(self._lib, "EVP_PKEY_X448", None):
-            # EVP_PKEY_X448 is not present in CRYPTOGRAPHY_IS_LIBRESSL
-            return rust_openssl.x448.public_key_from_ptr(
-                int(self._ffi.cast("uintptr_t", evp_pkey))
-            )
-        elif key_type == self._lib.EVP_PKEY_X25519:
-            return rust_openssl.x25519.public_key_from_ptr(
-                int(self._ffi.cast("uintptr_t", evp_pkey))
-            )
-        elif key_type == getattr(self._lib, "EVP_PKEY_ED448", None):
-            # EVP_PKEY_ED448 is not present in CRYPTOGRAPHY_IS_LIBRESSL
-            return rust_openssl.ed448.public_key_from_ptr(
-                int(self._ffi.cast("uintptr_t", evp_pkey))
-            )
-        else:
-            raise UnsupportedAlgorithm("Unsupported key type.")
+        return rust_openssl.keys.public_key_from_ptr(
+            int(self._ffi.cast("uintptr_t", evp_pkey))
+        )
 
     def _oaep_hash_supported(self, algorithm: hashes.HashAlgorithm) -> bool:
         if self._fips_enabled and isinstance(algorithm, hashes.SHA1):
@@ -565,9 +461,6 @@ class Backend:
             algorithm, CBC(b"\x00" * algorithm.block_size)
         )
 
-    def create_cmac_ctx(self, algorithm: BlockCipherAlgorithm) -> _CMACContext:
-        return _CMACContext(self, algorithm)
-
     def load_pem_private_key(
         self,
         data: bytes,
@@ -619,9 +512,7 @@ class Backend:
             if rsa_cdata != self._ffi.NULL:
                 rsa_cdata = self._ffi.gc(rsa_cdata, self._lib.RSA_free)
                 evp_pkey = self._rsa_cdata_to_evp_pkey(rsa_cdata)
-                return rust_openssl.rsa.public_key_from_ptr(
-                    int(self._ffi.cast("uintptr_t", evp_pkey))
-                )
+                return self._evp_pkey_to_public_key(evp_pkey)
             else:
                 self._handle_key_loading_error()
 
@@ -684,9 +575,7 @@ class Backend:
             if rsa_cdata != self._ffi.NULL:
                 rsa_cdata = self._ffi.gc(rsa_cdata, self._lib.RSA_free)
                 evp_pkey = self._rsa_cdata_to_evp_pkey(rsa_cdata)
-                return rust_openssl.rsa.public_key_from_ptr(
-                    int(self._ffi.cast("uintptr_t", evp_pkey))
-                )
+                return self._evp_pkey_to_public_key(evp_pkey)
             else:
                 self._handle_key_loading_error()
 
@@ -867,7 +756,7 @@ class Backend:
     def x25519_supported(self) -> bool:
         if self._fips_enabled:
             return False
-        return not self._lib.CRYPTOGRAPHY_LIBRESSL_LESS_THAN_370
+        return True
 
     def x448_supported(self) -> bool:
         if self._fips_enabled:
@@ -880,7 +769,7 @@ class Backend:
     def ed25519_supported(self) -> bool:
         if self._fips_enabled:
             return False
-        return self._lib.CRYPTOGRAPHY_HAS_WORKING_ED25519
+        return True
 
     def ed448_supported(self) -> bool:
         if self._fips_enabled:
