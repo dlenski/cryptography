@@ -10,7 +10,8 @@ import pytest
 
 from cryptography import x509
 from cryptography.exceptions import UnsupportedAlgorithm
-from cryptography.hazmat.backends.openssl.backend import _RC2
+from cryptography.hazmat.bindings._rust import openssl as rust_openssl
+from cryptography.hazmat.decrepit.ciphers.algorithms import RC2
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import (
     dsa,
@@ -19,6 +20,7 @@ from cryptography.hazmat.primitives.asymmetric import (
     ed25519,
     rsa,
 )
+from cryptography.hazmat.primitives.ciphers.modes import CBC
 from cryptography.hazmat.primitives.serialization import (
     Encoding,
     PublicFormat,
@@ -49,20 +51,7 @@ def _skip_curve_unsupported(backend, curve):
 )
 class TestPKCS12Loading:
     def _test_load_pkcs12_ec_keys(self, filename, password, backend):
-        cert = load_vectors_from_file(
-            os.path.join("x509", "custom", "ca", "ca.pem"),
-            lambda pemfile: x509.load_pem_x509_certificate(
-                pemfile.read(), backend
-            ),
-            mode="rb",
-        )
-        key = load_vectors_from_file(
-            os.path.join("x509", "custom", "ca", "ca_key.pem"),
-            lambda pemfile: load_pem_private_key(
-                pemfile.read(), None, backend
-            ),
-            mode="rb",
-        )
+        cert, key = _load_ca(backend)
         assert isinstance(key, ec.EllipticCurvePrivateKey)
         parsed_key, parsed_cert, parsed_more_certs = load_vectors_from_file(
             os.path.join("pkcs12", filename),
@@ -94,20 +83,16 @@ class TestPKCS12Loading:
         ],
     )
     @pytest.mark.supported(
-        only_if=lambda backend: backend.cipher_supported(_RC2(), None),
+        only_if=lambda backend: backend.cipher_supported(
+            RC2(b"0" * 16), CBC(b"0" * 8)
+        ),
         skip_message="Does not support RC2",
     )
     def test_load_pkcs12_ec_keys_rc2(self, filename, password, backend):
         self._test_load_pkcs12_ec_keys(filename, password, backend)
 
-    def test_load_pkcs12_cert_only(self, backend):
-        cert = load_vectors_from_file(
-            os.path.join("x509", "custom", "ca", "ca.pem"),
-            lambda pemfile: x509.load_pem_x509_certificate(
-                pemfile.read(), backend
-            ),
-            mode="rb",
-        )
+    def test_load_key_and_cert_cert_only(self, backend):
+        cert, _ = _load_ca(backend)
         parsed_key, parsed_cert, parsed_more_certs = load_vectors_from_file(
             os.path.join("pkcs12", "cert-aes256cbc-no-key.p12"),
             lambda data: load_key_and_certificates(
@@ -119,14 +104,8 @@ class TestPKCS12Loading:
         assert parsed_key is None
         assert parsed_more_certs == [cert]
 
-    def test_load_pkcs12_key_only(self, backend):
-        key = load_vectors_from_file(
-            os.path.join("x509", "custom", "ca", "ca_key.pem"),
-            lambda pemfile: load_pem_private_key(
-                pemfile.read(), None, backend
-            ),
-            mode="rb",
-        )
+    def test_load_key_and_certificates_key_only(self, backend):
+        _, key = _load_ca(backend)
         assert isinstance(key, ec.EllipticCurvePrivateKey)
         parsed_key, parsed_cert, parsed_more_certs = load_vectors_from_file(
             os.path.join("pkcs12", "no-cert-key-aes256cbc.p12"),
@@ -139,6 +118,19 @@ class TestPKCS12Loading:
         assert parsed_key.private_numbers() == key.private_numbers()
         assert parsed_cert is None
         assert parsed_more_certs == []
+
+    def test_load_pkcs12_key_only(self, backend):
+        _, key = _load_ca(backend)
+        assert isinstance(key, ec.EllipticCurvePrivateKey)
+        p12 = load_vectors_from_file(
+            os.path.join("pkcs12", "no-cert-key-aes256cbc.p12"),
+            lambda data: load_pkcs12(data.read(), b"cryptography", backend),
+            mode="rb",
+        )
+        assert isinstance(p12.key, ec.EllipticCurvePrivateKey)
+        assert p12.key.private_numbers() == key.private_numbers()
+        assert p12.cert is None
+        assert p12.additional_certs == []
 
     def test_non_bytes(self, backend):
         with pytest.raises(TypeError):
@@ -290,9 +282,9 @@ def _load_cert(backend, path):
 
 
 def _load_ca(backend):
-    cert = _load_cert(backend, os.path.join("x509", "custom", "ca", "ca.pem"))
+    cert = _load_cert(backend, os.path.join("pkcs12", "ca", "ca.pem"))
     key = load_vectors_from_file(
-        os.path.join("x509", "custom", "ca", "ca_key.pem"),
+        os.path.join("pkcs12", "ca", "ca_key.pem"),
         lambda pemfile: load_pem_private_key(pemfile.read(), None, backend),
         mode="rb",
     )
@@ -422,7 +414,47 @@ class TestPKCS12Creation:
 
         p12_cert = load_pkcs12(p12, None, backend)
         cas = p12_cert.additional_certs
+        assert cas[0].certificate == cert2
         assert cas[0].friendly_name == b"cert2"
+        assert cas[1].certificate == cert3
+        assert cas[1].friendly_name is None
+
+    @pytest.mark.parametrize(
+        ("encryption_algorithm", "password"),
+        [
+            (serialization.BestAvailableEncryption(b"password"), b"password"),
+            (
+                serialization.PrivateFormat.PKCS12.encryption_builder().build(
+                    b"not a password"
+                ),
+                b"not a password",
+            ),
+            (serialization.NoEncryption(), None),
+        ],
+    )
+    def test_generate_cas_friendly_names_no_key(
+        self, backend, encryption_algorithm, password
+    ):
+        cert2 = _load_cert(
+            backend, os.path.join("x509", "custom", "dsa_selfsigned_ca.pem")
+        )
+        cert3 = _load_cert(backend, os.path.join("x509", "letsencryptx3.pem"))
+        p12 = serialize_key_and_certificates(
+            None,
+            None,
+            None,
+            [
+                PKCS12Certificate(cert2, b"cert2"),
+                PKCS12Certificate(cert3, None),
+            ],
+            encryption_algorithm,
+        )
+
+        p12_cert = load_pkcs12(p12, password, backend)
+        cas = p12_cert.additional_certs
+        assert cas[0].certificate == cert2
+        assert cas[0].friendly_name == b"cert2"
+        assert cas[1].certificate == cert3
         assert cas[1].friendly_name is None
 
     def test_generate_wrong_types(self, backend):
@@ -511,6 +543,27 @@ class TestPKCS12Creation:
         assert parsed_key is None
         assert parsed_more_certs == [cert]
 
+    def test_generate_cert_only_none_cas(self, backend):
+        # Same as test_generate_cert_only, but passing None instead of an
+        # empty list for cas.
+        cert, _ = _load_ca(backend)
+        p12 = serialize_key_and_certificates(
+            None, None, cert, None, serialization.NoEncryption()
+        )
+        parsed_key, parsed_cert, parsed_more_certs = load_key_and_certificates(
+            p12, None
+        )
+        assert parsed_cert is None
+        assert parsed_key is None
+        assert parsed_more_certs == [cert]
+
+    def test_invalid_utf8_friendly_name(self, backend):
+        cert, _ = _load_ca(backend)
+        with pytest.raises(ValueError):
+            serialize_key_and_certificates(
+                b"\xc9", None, cert, None, serialization.NoEncryption()
+            )
+
     def test_must_supply_something(self):
         with pytest.raises(ValueError) as exc:
             serialize_key_and_certificates(
@@ -580,7 +633,7 @@ class TestPKCS12Creation:
     ):
         if (
             enc_alg is PBES.PBESv2SHA256AndAES256CBC
-        ) and not backend._lib.CRYPTOGRAPHY_OPENSSL_300_OR_GREATER:
+        ) and not rust_openssl.CRYPTOGRAPHY_OPENSSL_300_OR_GREATER:
             pytest.skip("PBESv2 is not supported on OpenSSL < 3.0")
 
         if (
@@ -637,7 +690,7 @@ class TestPKCS12Creation:
 
     @pytest.mark.supported(
         only_if=lambda backend: (
-            not backend._lib.CRYPTOGRAPHY_OPENSSL_300_OR_GREATER
+            not rust_openssl.CRYPTOGRAPHY_OPENSSL_300_OR_GREATER
         ),
         skip_message="Requires OpenSSL < 3.0.0 (or Libre/Boring)",
     )
@@ -680,6 +733,24 @@ class TestPKCS12Creation:
         with pytest.raises(UnsupportedAlgorithm):
             serialize_key_and_certificates(
                 b"name", cakey, cacert, [], algorithm
+            )
+
+    @pytest.mark.supported(
+        only_if=lambda backend: backend._lib.Cryptography_HAS_PKCS12_SET_MAC,
+        skip_message="Requires OpenSSL with PKCS12_set_mac",
+    )
+    def test_set_mac_key_certificate_mismatch(self, backend):
+        cacert, _ = _load_ca(backend)
+        key = ec.generate_private_key(ec.SECP256R1())
+        encryption = (
+            serialization.PrivateFormat.PKCS12.encryption_builder()
+            .hmac_hash(hashes.SHA256())
+            .build(b"password")
+        )
+
+        with pytest.raises(ValueError):
+            serialize_key_and_certificates(
+                b"name", key, cacert, [], encryption
             )
 
 
@@ -771,7 +842,7 @@ class TestPKCS12Objects:
         assert c2a != c2b
         assert c2a != c3a
 
-        assert c2n != "test"
+        assert c2n != "test"  # type: ignore[comparison-overlap]
 
     def test_certificate_hash(self, backend):
         cert2 = _load_cert(
@@ -944,19 +1015,15 @@ class TestPKCS12Objects:
         cert2 = _load_cert(
             backend, os.path.join("x509", "cryptography.io.pem")
         )
-        assert (
-            repr(
-                PKCS12KeyAndCertificates(
-                    key,
-                    PKCS12Certificate(cert, None),
-                    [PKCS12Certificate(cert2, b"name2")],
-                )
-            )
-            == "<PKCS12KeyAndCertificates(key={}, cert=<PKCS12Certificate("
-            "{}, friendly_name=None)>, additional_certs=[<PKCS12Certificate"
-            "({}, friendly_name=b'name2')>])>".format(
+        assert repr(
+            PKCS12KeyAndCertificates(
                 key,
-                cert,
-                cert2,
+                PKCS12Certificate(cert, None),
+                [PKCS12Certificate(cert2, b"name2")],
             )
+        ) == (
+            f"<PKCS12KeyAndCertificates(key={key}, "
+            f"cert=<PKCS12Certificate({cert}, friendly_name=None)>, "
+            f"additional_certs=["
+            f"<PKCS12Certificate({cert2}, friendly_name=b'name2')>])>"
         )

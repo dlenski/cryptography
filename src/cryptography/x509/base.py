@@ -189,6 +189,13 @@ class Certificate(metaclass=abc.ABCMeta):
 
     @property
     @abc.abstractmethod
+    def public_key_algorithm_oid(self) -> ObjectIdentifier:
+        """
+        Returns the ObjectIdentifier of the public key.
+        """
+
+    @property
+    @abc.abstractmethod
     def not_valid_before(self) -> datetime.datetime:
         """
         Not before time (represented as UTC datetime)
@@ -425,6 +432,15 @@ class CertificateRevocationList(metaclass=abc.ABCMeta):
 
     @property
     @abc.abstractmethod
+    def signature_algorithm_parameters(
+        self,
+    ) -> None | padding.PSS | padding.PKCS1v15 | ec.ECDSA:
+        """
+        Returns the signature algorithm parameters.
+        """
+
+    @property
+    @abc.abstractmethod
     def issuer(self) -> Name:
         """
         Returns the X509Name with the issuer of this CRL.
@@ -494,12 +510,10 @@ class CertificateRevocationList(metaclass=abc.ABCMeta):
         """
 
     @typing.overload
-    def __getitem__(self, idx: int) -> RevokedCertificate:
-        ...
+    def __getitem__(self, idx: int) -> RevokedCertificate: ...
 
     @typing.overload
-    def __getitem__(self, idx: slice) -> list[RevokedCertificate]:
-        ...
+    def __getitem__(self, idx: slice) -> list[RevokedCertificate]: ...
 
     @abc.abstractmethod
     def __getitem__(
@@ -632,50 +646,16 @@ class CertificateSigningRequest(metaclass=abc.ABCMeta):
 CertificateSigningRequest.register(rust_x509.CertificateSigningRequest)
 
 
-# Backend argument preserved for API compatibility, but ignored.
-def load_pem_x509_certificate(
-    data: bytes, backend: typing.Any = None
-) -> Certificate:
-    return rust_x509.load_pem_x509_certificate(data)
+load_pem_x509_certificate = rust_x509.load_pem_x509_certificate
+load_der_x509_certificate = rust_x509.load_der_x509_certificate
 
+load_pem_x509_certificates = rust_x509.load_pem_x509_certificates
 
-def load_pem_x509_certificates(data: bytes) -> list[Certificate]:
-    return rust_x509.load_pem_x509_certificates(data)
+load_pem_x509_csr = rust_x509.load_pem_x509_csr
+load_der_x509_csr = rust_x509.load_der_x509_csr
 
-
-# Backend argument preserved for API compatibility, but ignored.
-def load_der_x509_certificate(
-    data: bytes, backend: typing.Any = None
-) -> Certificate:
-    return rust_x509.load_der_x509_certificate(data)
-
-
-# Backend argument preserved for API compatibility, but ignored.
-def load_pem_x509_csr(
-    data: bytes, backend: typing.Any = None
-) -> CertificateSigningRequest:
-    return rust_x509.load_pem_x509_csr(data)
-
-
-# Backend argument preserved for API compatibility, but ignored.
-def load_der_x509_csr(
-    data: bytes, backend: typing.Any = None
-) -> CertificateSigningRequest:
-    return rust_x509.load_der_x509_csr(data)
-
-
-# Backend argument preserved for API compatibility, but ignored.
-def load_pem_x509_crl(
-    data: bytes, backend: typing.Any = None
-) -> CertificateRevocationList:
-    return rust_x509.load_pem_x509_crl(data)
-
-
-# Backend argument preserved for API compatibility, but ignored.
-def load_der_x509_crl(
-    data: bytes, backend: typing.Any = None
-) -> CertificateRevocationList:
-    return rust_x509.load_der_x509_crl(data)
+load_pem_x509_crl = rust_x509.load_pem_x509_crl
+load_der_x509_crl = rust_x509.load_der_x509_crl
 
 
 class CertificateSigningRequestBuilder:
@@ -889,7 +869,7 @@ class CertificateBuilder:
         # zero.
         if number.bit_length() >= 160:  # As defined in RFC 5280
             raise ValueError(
-                "The serial number should not be more than 159 " "bits."
+                "The serial number should not be more than 159 bits."
             )
         return CertificateBuilder(
             self._issuer_name,
@@ -1067,7 +1047,7 @@ class CertificateRevocationListBuilder:
         last_update = _convert_to_naive_utc_time(last_update)
         if last_update < _EARLIEST_UTC_TIME:
             raise ValueError(
-                "The last update date must be on or after" " 1950 January 1."
+                "The last update date must be on or after 1950 January 1."
             )
         if self._next_update is not None and last_update > self._next_update:
             raise ValueError(
@@ -1091,7 +1071,7 @@ class CertificateRevocationListBuilder:
         next_update = _convert_to_naive_utc_time(next_update)
         if next_update < _EARLIEST_UTC_TIME:
             raise ValueError(
-                "The last update date must be on or after" " 1950 January 1."
+                "The last update date must be on or after 1950 January 1."
             )
         if self._last_update is not None and next_update < self._last_update:
             raise ValueError(
@@ -1146,6 +1126,8 @@ class CertificateRevocationListBuilder:
         private_key: CertificateIssuerPrivateKeyTypes,
         algorithm: _AllowedHashTypes | None,
         backend: typing.Any = None,
+        *,
+        rsa_padding: padding.PSS | padding.PKCS1v15 | None = None,
     ) -> CertificateRevocationList:
         if self._issuer_name is None:
             raise ValueError("A CRL must have an issuer name")
@@ -1156,7 +1138,15 @@ class CertificateRevocationListBuilder:
         if self._next_update is None:
             raise ValueError("A CRL must have a next update time")
 
-        return rust_x509.create_x509_crl(self, private_key, algorithm)
+        if rsa_padding is not None:
+            if not isinstance(rsa_padding, (padding.PSS, padding.PKCS1v15)):
+                raise TypeError("Padding must be PSS or PKCS1v15")
+            if not isinstance(private_key, rsa.RSAPrivateKey):
+                raise TypeError("Padding is only supported for RSA keys")
+
+        return rust_x509.create_x509_crl(
+            self, private_key, algorithm, rsa_padding
+        )
 
 
 class RevokedCertificateBuilder:
@@ -1182,7 +1172,7 @@ class RevokedCertificateBuilder:
         # zero.
         if number.bit_length() >= 160:  # As defined in RFC 5280
             raise ValueError(
-                "The serial number should not be more than 159 " "bits."
+                "The serial number should not be more than 159 bits."
             )
         return RevokedCertificateBuilder(
             number, self._revocation_date, self._extensions
@@ -1198,7 +1188,7 @@ class RevokedCertificateBuilder:
         time = _convert_to_naive_utc_time(time)
         if time < _EARLIEST_UTC_TIME:
             raise ValueError(
-                "The revocation date must be on or after" " 1950 January 1."
+                "The revocation date must be on or after 1950 January 1."
             )
         return RevokedCertificateBuilder(
             self._serial_number, time, self._extensions

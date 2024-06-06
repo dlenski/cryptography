@@ -20,8 +20,8 @@ operating systems.
 * x86-64 CentOS 9 Stream
 * x86-64 Fedora (latest)
 * x86-64 macOS 13 Ventura and ARM64 macOS 14 Sonoma
-* x86-64 Ubuntu 20.04, 22.04, rolling
-* ARM64 Ubuntu 22.04
+* x86-64 Ubuntu 20.04, 22.04, 24.04, rolling
+* ARM64 Ubuntu rolling
 * x86-64 Debian Buster (10.x), Bullseye (11.x), Bookworm (12.x),
   Trixie (13.x), and Sid (unstable)
 * x86-64 and ARM64 Alpine (latest)
@@ -31,9 +31,10 @@ We test compiling with ``clang`` as well as ``gcc`` and use the following
 OpenSSL releases in addition to distribution provided releases from the
 above supported platforms:
 
-* ``OpenSSL 1.1.1-latest``
 * ``OpenSSL 3.0-latest``
 * ``OpenSSL 3.1-latest``
+* ``OpenSSL 3.2-latest``
+* ``OpenSSL 3.3-latest``
 
 We also test against the latest commit of BoringSSL as well as versions of
 LibreSSL that are receiving security support at the time of a given
@@ -133,7 +134,7 @@ Fedora/RHEL/CentOS
 .. warning::
 
     For RHEL and CentOS you must be on version 8.8 or newer for the command
-    below to install a sufficiently new Rust. If your Rust is less than 1.63.0
+    below to install a sufficiently new Rust. If your Rust is less than 1.65.0
     please see the :ref:`Rust installation instructions <installation:Rust>`
     for information about installing a newer Rust.
 
@@ -311,7 +312,7 @@ Rust
     a Rust toolchain.
 
 Building ``cryptography`` requires having a working Rust toolchain. The current
-minimum supported Rust version is 1.63.0. **This is newer than the Rust some
+minimum supported Rust version is 1.65.0. **This is newer than the Rust some
 package managers ship**, so users may need to install with the
 instructions below.
 

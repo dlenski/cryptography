@@ -8,6 +8,7 @@ use crate::common;
 use crate::crl;
 use crate::name;
 
+#[derive(Debug)]
 pub struct DuplicateExtensionsError(pub asn1::ObjectIdentifier);
 
 pub type RawExtensions<'a> = common::Asn1ReadableOrWritable<
@@ -252,7 +253,7 @@ impl KeyUsage<'_> {
         self.0.has_bit_set(0)
     }
 
-    pub fn content_comitment(&self) -> bool {
+    pub fn content_commitment(&self) -> bool {
         self.0.has_bit_set(1)
     }
 
@@ -287,9 +288,8 @@ impl KeyUsage<'_> {
 
 #[cfg(test)]
 mod tests {
-    use crate::oid::{AUTHORITY_KEY_IDENTIFIER_OID, BASIC_CONSTRAINTS_OID};
-
     use super::{BasicConstraints, Extension, Extensions, KeyUsage};
+    use crate::oid::{AUTHORITY_KEY_IDENTIFIER_OID, BASIC_CONSTRAINTS_OID};
 
     #[test]
     fn test_get_extension() {
@@ -364,7 +364,7 @@ mod tests {
         let ku: KeyUsage<'_> = asn1::parse_single(&asn1).unwrap();
         assert!(!ku.is_zeroed());
         assert!(ku.digital_signature());
-        assert!(ku.content_comitment());
+        assert!(ku.content_commitment());
         assert!(ku.key_encipherment());
         assert!(ku.data_encipherment());
         assert!(ku.key_agreement());

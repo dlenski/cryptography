@@ -46,9 +46,8 @@ def _skip_if_dsa_not_supported(
 ) -> None:
     if not backend.dsa_hash_supported(algorithm):
         pytest.skip(
-            "{} does not support the provided args. p: {}, hash: {}".format(
-                backend, p.bit_length(), algorithm.name
-            )
+            f"{backend} does not support the provided args. "
+            f"p: {p.bit_length()}, hash: {algorithm.name}"
         )
 
 
@@ -521,6 +520,14 @@ class TestDSASignature:
         signature = private_key.sign(message, algorithm)
         public_key = private_key.public_key()
         public_key.verify(signature, message, algorithm)
+
+    def test_sign_verify_buffer(self, backend):
+        private_key = DSA_KEY_1024.private_key(backend)
+        message = bytearray(b"one little message")
+        algorithm = hashes.SHA1()
+        signature = private_key.sign(message, algorithm)
+        public_key = private_key.public_key()
+        public_key.verify(bytearray(signature), message, algorithm)
 
     def test_prehashed_sign(self, backend):
         private_key = DSA_KEY_1024.private_key(backend)

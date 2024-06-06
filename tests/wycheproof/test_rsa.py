@@ -2,7 +2,6 @@
 # 2.0, and the BSD License. See the LICENSE file in the root of this repository
 # for complete details.
 
-
 import binascii
 
 import pytest
@@ -114,9 +113,8 @@ def test_rsa_pkcs1v15_signature_generation(backend, wycheproof):
             digest, hashes.SHA1
         ):
             pytest.skip(
-                "Invalid params for FIPS. key: {} bits, digest: {}".format(
-                    key.key_size, digest.name
-                )
+                f"Invalid params for FIPS. key: {key.key_size} bits, "
+                f"digest: {digest.name}"
             )
 
     sig = key.sign(

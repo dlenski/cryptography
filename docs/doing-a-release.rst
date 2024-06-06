@@ -50,10 +50,10 @@ Performing the release
 ----------------------
 
 The commit that merged the version number bump is now the official release
-commit for this release. You will need to have ``gpg`` installed and a ``gpg``
-key in order to do a release. Once this has happened:
+commit for this release. You will need to have ``git`` configured to perform
+signed tags. Once this has happened:
 
-* Run ``python release.py release {version}``.
+* Run ``python release.py release``.
 
 The release should now be available on PyPI and a tag should be available in
 the repository.
@@ -100,4 +100,4 @@ Post-release tasks
 .. _`upgrading OpenSSL issue template`: https://github.com/pyca/cryptography/issues/new?template=openssl-release.md
 .. _`milestone`: https://github.com/pyca/cryptography/milestones
 .. _`mailing list`: https://mail.python.org/mailman/listinfo/cryptography-dev
-.. _`python-announce`: https://mail.python.org/mailman/listinfo/python-announce-list
+.. _`python-announce`: https://mail.python.org/mailman3/lists/python-announce-list.python.org/

@@ -444,6 +444,26 @@ class TestInvalidityDate:
         ext = x509.InvalidityDate(datetime.datetime(2015, 1, 1, 1, 1))
         assert ext.public_bytes() == b"\x18\x0f20150101010100Z"
 
+    def test_timezone_aware_api(self):
+        naive_date = datetime.datetime(2015, 1, 1, 1, 1)
+        ext_naive = x509.InvalidityDate(invalidity_date=naive_date)
+        assert ext_naive.invalidity_date_utc == datetime.datetime(
+            2015, 1, 1, 1, 1, tzinfo=datetime.timezone.utc
+        )
+
+        tz_aware_date = datetime.datetime(
+            2015,
+            1,
+            1,
+            1,
+            1,
+            tzinfo=datetime.timezone(datetime.timedelta(hours=-8)),
+        )
+        ext_aware = x509.InvalidityDate(invalidity_date=tz_aware_date)
+        assert ext_aware.invalidity_date_utc == datetime.datetime(
+            2015, 1, 1, 9, 1, tzinfo=datetime.timezone.utc
+        )
+
 
 class TestNoticeReference:
     def test_notice_numbers_not_all_int(self):
@@ -1758,22 +1778,6 @@ class TestSubjectKeyIdentifierExtension:
         with pytest.raises(ValueError, match="Invalid public key encoding"):
             _key_identifier_from_public_key(pretend_key)
 
-    def test_no_optional_params_allowed_from_public_key(self, backend):
-        data = load_vectors_from_file(
-            filename=os.path.join(
-                "asymmetric",
-                "DER_Serialization",
-                "dsa_public_key_no_params.der",
-            ),
-            loader=lambda data: data.read(),
-            mode="rb",
-        )
-        pretend_key = pretend.stub(public_bytes=lambda x, y: data)
-        key_identifier = _key_identifier_from_public_key(pretend_key)
-        assert key_identifier == binascii.unhexlify(
-            b"24c0133a6a492f2c48a18c7648e515db5ac76749"
-        )
-
     def test_from_ec_public_key(self, backend):
         _skip_curve_unsupported(backend, ec.SECP384R1())
         cert = _load_cert(
@@ -2516,7 +2520,7 @@ class TestRSASubjectAlternativeNameExtension:
         assert ext is not None
         uri = ext.value.get_values_for_type(x509.UniformResourceIdentifier)
         assert uri == [
-            "gopher://xn--80ato2c.cryptography:70/path?q=s#hel" "lo",
+            "gopher://xn--80ato2c.cryptography:70/path?q=s#hello",
             "http://someregulardomain.com",
         ]
 
@@ -6010,11 +6014,11 @@ class TestPrecertificateSignedCertificateTimestampsExtension:
             == x509.certificate_transparency.SignatureAlgorithm.ECDSA
         )
         assert sct.signature == (
-            b"\x30\x45\x02\x21\x00\xB8\x03\xAD\x34\xF6\xFC\x0F\x2C\xFF\x84\xA0"
-            b"\x86\xE5\xD7\xCF\x5A\xF0\x0A\x07\x62\x6A\x7F\xB3\xA6\x44\x64\xF1"
-            b"\x95\xA4\x48\x45\x11\x02\x20\x2F\x61\x8D\x53\x1B\x6F\x4A\xB8\x0A"
-            b"\x67\xB2\x07\xE1\x8F\x6D\xAD\xD1\x04\x4A\x5E\xB3\x89\xEF\x7C\x60"
-            b"\xC2\x68\x53\xF9\x3D\x1F\x6D"
+            b"\x30\x45\x02\x21\x00\xb8\x03\xad\x34\xf6\xfc\x0f\x2c\xff\x84\xa0"
+            b"\x86\xe5\xd7\xcf\x5a\xf0\x0a\x07\x62\x6a\x7f\xb3\xa6\x44\x64\xf1"
+            b"\x95\xa4\x48\x45\x11\x02\x20\x2f\x61\x8d\x53\x1b\x6f\x4a\xb8\x0a"
+            b"\x67\xb2\x07\xe1\x8f\x6d\xad\xd1\x04\x4a\x5e\xb3\x89\xef\x7c\x60"
+            b"\xc2\x68\x53\xf9\x3d\x1f\x6d"
         )
         assert sct.extension_bytes == b""
 

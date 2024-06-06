@@ -4,6 +4,7 @@
 
 use crate::error::CryptographyResult;
 use crate::types;
+use pyo3::prelude::PyAnyMethods;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
@@ -22,15 +23,15 @@ impl ObjectIdentifier {
     }
 
     #[getter]
-    fn dotted_string<'p>(&self, py: pyo3::Python<'p>) -> &'p pyo3::types::PyString {
-        pyo3::types::PyString::new(py, &self.oid.to_string())
+    fn dotted_string(&self) -> String {
+        self.oid.to_string()
     }
 
     #[getter]
     fn _name<'p>(
         slf: pyo3::PyRef<'_, Self>,
         py: pyo3::Python<'p>,
-    ) -> pyo3::PyResult<&'p pyo3::PyAny> {
+    ) -> pyo3::PyResult<pyo3::Bound<'p, pyo3::PyAny>> {
         types::OID_NAMES
             .get(py)?
             .call_method1(pyo3::intern!(py, "get"), (slf, "Unknown OID"))
@@ -40,17 +41,12 @@ impl ObjectIdentifier {
         slf
     }
 
-    fn __repr__(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<String> {
-        let self_clone = pyo3::PyCell::new(
-            py,
-            ObjectIdentifier {
-                oid: self.oid.clone(),
-            },
-        )?;
-        let name = ObjectIdentifier::_name(self_clone.borrow(), py)?.extract::<&str>()?;
+    fn __repr__(slf: &pyo3::Bound<'_, Self>, py: pyo3::Python<'_>) -> pyo3::PyResult<String> {
+        let name = Self::_name(slf.borrow(), py)?;
         Ok(format!(
             "<ObjectIdentifier(oid={}, name={})>",
-            self.oid, name
+            slf.get().oid,
+            name.extract::<pyo3::pybacked::PyBackedStr>()?
         ))
     }
 

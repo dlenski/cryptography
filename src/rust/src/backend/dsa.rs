@@ -3,8 +3,11 @@
 // for complete details.
 
 use crate::backend::utils;
+use crate::buf::CffiBuf;
 use crate::error::{CryptographyError, CryptographyResult};
-use crate::{exceptions, types};
+use crate::exceptions;
+use pyo3::prelude::PyAnyMethods;
+use pyo3::prelude::PyModuleMethods;
 
 #[pyo3::prelude::pyclass(
     frozen,
@@ -55,58 +58,6 @@ fn generate_parameters(key_size: u32) -> CryptographyResult<DsaParameters> {
     Ok(DsaParameters { dsa })
 }
 
-#[pyo3::prelude::pyfunction]
-fn from_private_numbers(
-    py: pyo3::Python<'_>,
-    numbers: &pyo3::PyAny,
-) -> CryptographyResult<DsaPrivateKey> {
-    let public_numbers = numbers.getattr(pyo3::intern!(py, "public_numbers"))?;
-    let parameter_numbers = public_numbers.getattr(pyo3::intern!(py, "parameter_numbers"))?;
-
-    let dsa = openssl::dsa::Dsa::from_private_components(
-        utils::py_int_to_bn(py, parameter_numbers.getattr(pyo3::intern!(py, "p"))?)?,
-        utils::py_int_to_bn(py, parameter_numbers.getattr(pyo3::intern!(py, "q"))?)?,
-        utils::py_int_to_bn(py, parameter_numbers.getattr(pyo3::intern!(py, "g"))?)?,
-        utils::py_int_to_bn(py, numbers.getattr(pyo3::intern!(py, "x"))?)?,
-        utils::py_int_to_bn(py, public_numbers.getattr(pyo3::intern!(py, "y"))?)?,
-    )
-    .unwrap();
-    let pkey = openssl::pkey::PKey::from_dsa(dsa)?;
-    Ok(DsaPrivateKey { pkey })
-}
-
-#[pyo3::prelude::pyfunction]
-fn from_public_numbers(
-    py: pyo3::Python<'_>,
-    numbers: &pyo3::PyAny,
-) -> CryptographyResult<DsaPublicKey> {
-    let parameter_numbers = numbers.getattr(pyo3::intern!(py, "parameter_numbers"))?;
-
-    let dsa = openssl::dsa::Dsa::from_public_components(
-        utils::py_int_to_bn(py, parameter_numbers.getattr(pyo3::intern!(py, "p"))?)?,
-        utils::py_int_to_bn(py, parameter_numbers.getattr(pyo3::intern!(py, "q"))?)?,
-        utils::py_int_to_bn(py, parameter_numbers.getattr(pyo3::intern!(py, "g"))?)?,
-        utils::py_int_to_bn(py, numbers.getattr(pyo3::intern!(py, "y"))?)?,
-    )
-    .unwrap();
-    let pkey = openssl::pkey::PKey::from_dsa(dsa)?;
-    Ok(DsaPublicKey { pkey })
-}
-
-#[pyo3::prelude::pyfunction]
-fn from_parameter_numbers(
-    py: pyo3::Python<'_>,
-    numbers: &pyo3::PyAny,
-) -> CryptographyResult<DsaParameters> {
-    let dsa = openssl::dsa::Dsa::from_pqg(
-        utils::py_int_to_bn(py, numbers.getattr(pyo3::intern!(py, "p"))?)?,
-        utils::py_int_to_bn(py, numbers.getattr(pyo3::intern!(py, "q"))?)?,
-        utils::py_int_to_bn(py, numbers.getattr(pyo3::intern!(py, "g"))?)?,
-    )
-    .unwrap();
-    Ok(DsaParameters { dsa })
-}
-
 fn clone_dsa_params<T: openssl::pkey::HasParams>(
     d: &openssl::dsa::Dsa<T>,
 ) -> Result<openssl::dsa::Dsa<openssl::pkey::Params>, openssl::error::ErrorStack> {
@@ -118,19 +69,16 @@ impl DsaPrivateKey {
     fn sign<'p>(
         &self,
         py: pyo3::Python<'p>,
-        data: &pyo3::types::PyBytes,
-        algorithm: &pyo3::PyAny,
-    ) -> CryptographyResult<&'p pyo3::types::PyBytes> {
-        let (data, _): (&[u8], &pyo3::PyAny) = types::CALCULATE_DIGEST_AND_ALGORITHM
-            .get(py)?
-            .call1((data, algorithm))?
-            .extract()?;
+        data: CffiBuf<'_>,
+        algorithm: pyo3::Bound<'_, pyo3::PyAny>,
+    ) -> CryptographyResult<pyo3::Bound<'p, pyo3::types::PyBytes>> {
+        let (data, _) = utils::calculate_digest_and_algorithm(py, data.as_bytes(), &algorithm)?;
 
         let mut signer = openssl::pkey_ctx::PkeyCtx::new(&self.pkey)?;
         signer.sign_init()?;
         let mut sig = vec![];
-        signer.sign_to_vec(data, &mut sig)?;
-        Ok(pyo3::types::PyBytes::new(py, &sig))
+        signer.sign_to_vec(data.as_bytes(), &mut sig)?;
+        Ok(pyo3::types::PyBytes::new_bound(py, &sig))
     }
 
     #[getter]
@@ -156,7 +104,7 @@ impl DsaPrivateKey {
         Ok(DsaParameters { dsa })
     }
 
-    fn private_numbers<'p>(&self, py: pyo3::Python<'p>) -> CryptographyResult<&'p pyo3::PyAny> {
+    fn private_numbers(&self, py: pyo3::Python<'_>) -> CryptographyResult<DsaPrivateNumbers> {
         let dsa = self.pkey.dsa().unwrap();
 
         let py_p = utils::bn_to_py_int(py, dsa.p())?;
@@ -166,25 +114,28 @@ impl DsaPrivateKey {
         let py_pub_key = utils::bn_to_py_int(py, dsa.pub_key())?;
         let py_private_key = utils::bn_to_py_int(py, dsa.priv_key())?;
 
-        let parameter_numbers = types::DSA_PARAMETER_NUMBERS
-            .get(py)?
-            .call1((py_p, py_q, py_g))?;
-        let public_numbers = types::DSA_PUBLIC_NUMBERS
-            .get(py)?
-            .call1((py_pub_key, parameter_numbers))?;
-
-        Ok(types::DSA_PRIVATE_NUMBERS
-            .get(py)?
-            .call1((py_private_key, public_numbers))?)
+        let parameter_numbers = DsaParameterNumbers {
+            p: py_p.extract()?,
+            q: py_q.extract()?,
+            g: py_g.extract()?,
+        };
+        let public_numbers = DsaPublicNumbers {
+            y: py_pub_key.extract()?,
+            parameter_numbers: pyo3::Py::new(py, parameter_numbers)?,
+        };
+        Ok(DsaPrivateNumbers {
+            x: py_private_key.extract()?,
+            public_numbers: pyo3::Py::new(py, public_numbers)?,
+        })
     }
 
     fn private_bytes<'p>(
-        slf: &pyo3::PyCell<Self>,
+        slf: &pyo3::Bound<'p, Self>,
         py: pyo3::Python<'p>,
-        encoding: &pyo3::PyAny,
-        format: &pyo3::PyAny,
-        encryption_algorithm: &pyo3::PyAny,
-    ) -> CryptographyResult<&'p pyo3::types::PyBytes> {
+        encoding: &pyo3::Bound<'p, pyo3::PyAny>,
+        format: &pyo3::Bound<'p, pyo3::PyAny>,
+        encryption_algorithm: &pyo3::Bound<'p, pyo3::PyAny>,
+    ) -> CryptographyResult<pyo3::Bound<'p, pyo3::types::PyBytes>> {
         utils::pkey_private_bytes(
             py,
             slf,
@@ -203,18 +154,17 @@ impl DsaPublicKey {
     fn verify(
         &self,
         py: pyo3::Python<'_>,
-        signature: &[u8],
-        data: &pyo3::types::PyBytes,
-        algorithm: &pyo3::PyAny,
+        signature: CffiBuf<'_>,
+        data: CffiBuf<'_>,
+        algorithm: pyo3::Bound<'_, pyo3::PyAny>,
     ) -> CryptographyResult<()> {
-        let (data, _): (&[u8], &pyo3::PyAny) = types::CALCULATE_DIGEST_AND_ALGORITHM
-            .get(py)?
-            .call1((data, algorithm))?
-            .extract()?;
+        let (data, _) = utils::calculate_digest_and_algorithm(py, data.as_bytes(), &algorithm)?;
 
         let mut verifier = openssl::pkey_ctx::PkeyCtx::new(&self.pkey)?;
         verifier.verify_init()?;
-        let valid = verifier.verify(data, signature).unwrap_or(false);
+        let valid = verifier
+            .verify(data.as_bytes(), signature.as_bytes())
+            .unwrap_or(false);
         if !valid {
             return Err(CryptographyError::from(
                 exceptions::InvalidSignature::new_err(()),
@@ -234,7 +184,7 @@ impl DsaPublicKey {
         Ok(DsaParameters { dsa })
     }
 
-    fn public_numbers<'p>(&self, py: pyo3::Python<'p>) -> CryptographyResult<&'p pyo3::PyAny> {
+    fn public_numbers(&self, py: pyo3::Python<'_>) -> CryptographyResult<DsaPublicNumbers> {
         let dsa = self.pkey.dsa().unwrap();
 
         let py_p = utils::bn_to_py_int(py, dsa.p())?;
@@ -243,20 +193,23 @@ impl DsaPublicKey {
 
         let py_pub_key = utils::bn_to_py_int(py, dsa.pub_key())?;
 
-        let parameter_numbers = types::DSA_PARAMETER_NUMBERS
-            .get(py)?
-            .call1((py_p, py_q, py_g))?;
-        Ok(types::DSA_PUBLIC_NUMBERS
-            .get(py)?
-            .call1((py_pub_key, parameter_numbers))?)
+        let parameter_numbers = DsaParameterNumbers {
+            p: py_p.extract()?,
+            q: py_q.extract()?,
+            g: py_g.extract()?,
+        };
+        Ok(DsaPublicNumbers {
+            y: py_pub_key.extract()?,
+            parameter_numbers: pyo3::Py::new(py, parameter_numbers)?,
+        })
     }
 
     fn public_bytes<'p>(
-        slf: &pyo3::PyCell<Self>,
+        slf: &pyo3::Bound<'p, Self>,
         py: pyo3::Python<'p>,
-        encoding: &pyo3::PyAny,
-        format: &pyo3::PyAny,
-    ) -> CryptographyResult<&'p pyo3::types::PyBytes> {
+        encoding: &pyo3::Bound<'p, pyo3::PyAny>,
+        format: &pyo3::Bound<'p, pyo3::PyAny>,
+    ) -> CryptographyResult<pyo3::Bound<'p, pyo3::types::PyBytes>> {
         utils::pkey_public_bytes(py, slf, &slf.borrow().pkey, encoding, format, true, false)
     }
 
@@ -277,27 +230,284 @@ impl DsaParameters {
         Ok(DsaPrivateKey { pkey })
     }
 
-    fn parameter_numbers<'p>(&self, py: pyo3::Python<'p>) -> CryptographyResult<&'p pyo3::PyAny> {
+    fn parameter_numbers(&self, py: pyo3::Python<'_>) -> CryptographyResult<DsaParameterNumbers> {
         let py_p = utils::bn_to_py_int(py, self.dsa.p())?;
         let py_q = utils::bn_to_py_int(py, self.dsa.q())?;
         let py_g = utils::bn_to_py_int(py, self.dsa.g())?;
 
-        Ok(types::DSA_PARAMETER_NUMBERS
-            .get(py)?
-            .call1((py_p, py_q, py_g))?)
+        Ok(DsaParameterNumbers {
+            p: py_p.extract()?,
+            q: py_q.extract()?,
+            g: py_g.extract()?,
+        })
     }
 }
 
-pub(crate) fn create_module(py: pyo3::Python<'_>) -> pyo3::PyResult<&pyo3::prelude::PyModule> {
-    let m = pyo3::prelude::PyModule::new(py, "dsa")?;
-    m.add_function(pyo3::wrap_pyfunction!(generate_parameters, m)?)?;
-    m.add_function(pyo3::wrap_pyfunction!(from_private_numbers, m)?)?;
-    m.add_function(pyo3::wrap_pyfunction!(from_public_numbers, m)?)?;
-    m.add_function(pyo3::wrap_pyfunction!(from_parameter_numbers, m)?)?;
+fn check_dsa_parameters(
+    py: pyo3::Python<'_>,
+    parameters: &DsaParameterNumbers,
+) -> CryptographyResult<()> {
+    if ![1024, 2048, 3072, 4096].contains(
+        &parameters
+            .p
+            .bind(py)
+            .call_method0("bit_length")?
+            .extract::<usize>()?,
+    ) {
+        return Err(CryptographyError::from(
+            pyo3::exceptions::PyValueError::new_err(
+                "p must be exactly 1024, 2048, 3072, or 4096 bits long",
+            ),
+        ));
+    }
+
+    if ![160, 224, 256].contains(
+        &parameters
+            .q
+            .bind(py)
+            .call_method0("bit_length")?
+            .extract::<usize>()?,
+    ) {
+        return Err(CryptographyError::from(
+            pyo3::exceptions::PyValueError::new_err("q must be exactly 160, 224, or 256 bits long"),
+        ));
+    }
+
+    if parameters.g.bind(py).le(1)? || parameters.g.bind(py).ge(parameters.p.bind(py))? {
+        return Err(CryptographyError::from(
+            pyo3::exceptions::PyValueError::new_err("g, p don't satisfy 1 < g < p."),
+        ));
+    }
+
+    Ok(())
+}
+
+fn check_dsa_private_numbers(
+    py: pyo3::Python<'_>,
+    numbers: &DsaPrivateNumbers,
+) -> CryptographyResult<()> {
+    let params = numbers.public_numbers.get().parameter_numbers.get();
+    check_dsa_parameters(py, params)?;
+
+    if numbers.x.bind(py).le(0)? || numbers.x.bind(py).ge(params.q.bind(py))? {
+        return Err(CryptographyError::from(
+            pyo3::exceptions::PyValueError::new_err("x must be > 0 and < q."),
+        ));
+    }
+
+    if numbers.public_numbers.get().y.bind(py).ne(params
+        .g
+        .bind(py)
+        .pow(numbers.x.bind(py), Some(params.p.bind(py)))?)?
+    {
+        return Err(CryptographyError::from(
+            pyo3::exceptions::PyValueError::new_err("y must be equal to (g ** x % p)."),
+        ));
+    }
+
+    Ok(())
+}
+
+#[pyo3::prelude::pyclass(
+    frozen,
+    module = "cryptography.hazmat.primitives.asymmetric.dsa",
+    name = "DSAPrivateNumbers"
+)]
+struct DsaPrivateNumbers {
+    #[pyo3(get)]
+    x: pyo3::Py<pyo3::types::PyLong>,
+    #[pyo3(get)]
+    public_numbers: pyo3::Py<DsaPublicNumbers>,
+}
+
+#[pyo3::prelude::pyclass(
+    frozen,
+    module = "cryptography.hazmat.primitives.asymmetric.dsa",
+    name = "DSAPublicNumbers"
+)]
+struct DsaPublicNumbers {
+    #[pyo3(get)]
+    y: pyo3::Py<pyo3::types::PyLong>,
+    #[pyo3(get)]
+    parameter_numbers: pyo3::Py<DsaParameterNumbers>,
+}
+
+#[pyo3::prelude::pyclass(
+    frozen,
+    module = "cryptography.hazmat.primitives.asymmetric.dsa",
+    name = "DSAParameterNumbers"
+)]
+struct DsaParameterNumbers {
+    #[pyo3(get)]
+    p: pyo3::Py<pyo3::types::PyLong>,
+    #[pyo3(get)]
+    q: pyo3::Py<pyo3::types::PyLong>,
+    #[pyo3(get)]
+    g: pyo3::Py<pyo3::types::PyLong>,
+}
+
+#[pyo3::prelude::pymethods]
+impl DsaPrivateNumbers {
+    #[new]
+    fn new(
+        x: pyo3::Py<pyo3::types::PyLong>,
+        public_numbers: pyo3::Py<DsaPublicNumbers>,
+    ) -> DsaPrivateNumbers {
+        DsaPrivateNumbers { x, public_numbers }
+    }
+
+    fn private_key(
+        &self,
+        py: pyo3::Python<'_>,
+        backend: Option<pyo3::Bound<'_, pyo3::PyAny>>,
+    ) -> CryptographyResult<DsaPrivateKey> {
+        let _ = backend;
+
+        let public_numbers = self.public_numbers.get();
+        let parameter_numbers = public_numbers.parameter_numbers.get();
+
+        check_dsa_private_numbers(py, self)?;
+
+        let dsa = openssl::dsa::Dsa::from_private_components(
+            utils::py_int_to_bn(py, parameter_numbers.p.bind(py))?,
+            utils::py_int_to_bn(py, parameter_numbers.q.bind(py))?,
+            utils::py_int_to_bn(py, parameter_numbers.g.bind(py))?,
+            utils::py_int_to_bn(py, self.x.bind(py))?,
+            utils::py_int_to_bn(py, public_numbers.y.bind(py))?,
+        )
+        .unwrap();
+        let pkey = openssl::pkey::PKey::from_dsa(dsa)?;
+        Ok(DsaPrivateKey { pkey })
+    }
+
+    fn __eq__(
+        &self,
+        py: pyo3::Python<'_>,
+        other: pyo3::PyRef<'_, Self>,
+    ) -> CryptographyResult<bool> {
+        Ok(self.x.bind(py).eq(other.x.bind(py))?
+            && self
+                .public_numbers
+                .bind(py)
+                .eq(other.public_numbers.bind(py))?)
+    }
+}
+
+#[pyo3::prelude::pymethods]
+impl DsaPublicNumbers {
+    #[new]
+    fn new(
+        y: pyo3::Py<pyo3::types::PyLong>,
+        parameter_numbers: pyo3::Py<DsaParameterNumbers>,
+    ) -> DsaPublicNumbers {
+        DsaPublicNumbers {
+            y,
+            parameter_numbers,
+        }
+    }
+
+    fn public_key(
+        &self,
+        py: pyo3::Python<'_>,
+        backend: Option<pyo3::Bound<'_, pyo3::PyAny>>,
+    ) -> CryptographyResult<DsaPublicKey> {
+        let _ = backend;
+
+        let parameter_numbers = self.parameter_numbers.get();
+
+        check_dsa_parameters(py, parameter_numbers)?;
+
+        let dsa = openssl::dsa::Dsa::from_public_components(
+            utils::py_int_to_bn(py, parameter_numbers.p.bind(py))?,
+            utils::py_int_to_bn(py, parameter_numbers.q.bind(py))?,
+            utils::py_int_to_bn(py, parameter_numbers.g.bind(py))?,
+            utils::py_int_to_bn(py, self.y.bind(py))?,
+        )
+        .unwrap();
+        let pkey = openssl::pkey::PKey::from_dsa(dsa)?;
+        Ok(DsaPublicKey { pkey })
+    }
+
+    fn __eq__(
+        &self,
+        py: pyo3::Python<'_>,
+        other: pyo3::PyRef<'_, Self>,
+    ) -> CryptographyResult<bool> {
+        Ok(self.y.bind(py).eq(other.y.bind(py))?
+            && self
+                .parameter_numbers
+                .bind(py)
+                .eq(other.parameter_numbers.bind(py))?)
+    }
+
+    fn __repr__(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<String> {
+        let y = self.y.bind(py);
+        let parameter_numbers = self.parameter_numbers.bind(py).repr()?;
+        Ok(format!(
+            "<DSAPublicNumbers(y={y}, parameter_numbers={parameter_numbers})>"
+        ))
+    }
+}
+
+#[pyo3::prelude::pymethods]
+impl DsaParameterNumbers {
+    #[new]
+    fn new(
+        p: pyo3::Py<pyo3::types::PyLong>,
+        q: pyo3::Py<pyo3::types::PyLong>,
+        g: pyo3::Py<pyo3::types::PyLong>,
+    ) -> DsaParameterNumbers {
+        DsaParameterNumbers { p, q, g }
+    }
+
+    fn parameters(
+        &self,
+        py: pyo3::Python<'_>,
+        backend: Option<pyo3::Bound<'_, pyo3::PyAny>>,
+    ) -> CryptographyResult<DsaParameters> {
+        let _ = backend;
+
+        check_dsa_parameters(py, self)?;
+
+        let dsa = openssl::dsa::Dsa::from_pqg(
+            utils::py_int_to_bn(py, self.p.bind(py))?,
+            utils::py_int_to_bn(py, self.q.bind(py))?,
+            utils::py_int_to_bn(py, self.g.bind(py))?,
+        )
+        .unwrap();
+        Ok(DsaParameters { dsa })
+    }
+
+    fn __eq__(
+        &self,
+        py: pyo3::Python<'_>,
+        other: pyo3::PyRef<'_, Self>,
+    ) -> CryptographyResult<bool> {
+        Ok(self.p.bind(py).eq(other.p.bind(py))?
+            && self.q.bind(py).eq(other.q.bind(py))?
+            && self.g.bind(py).eq(other.g.bind(py))?)
+    }
+
+    fn __repr__(&self, py: pyo3::Python<'_>) -> pyo3::PyResult<String> {
+        let p = self.p.bind(py);
+        let q = self.q.bind(py);
+        let g = self.g.bind(py);
+        Ok(format!("<DSAParameterNumbers(p={p}, q={q}, g={g})>"))
+    }
+}
+
+pub(crate) fn create_module(
+    py: pyo3::Python<'_>,
+) -> pyo3::PyResult<pyo3::Bound<'_, pyo3::prelude::PyModule>> {
+    let m = pyo3::prelude::PyModule::new_bound(py, "dsa")?;
+    m.add_function(pyo3::wrap_pyfunction_bound!(generate_parameters, &m)?)?;
 
     m.add_class::<DsaPrivateKey>()?;
     m.add_class::<DsaPublicKey>()?;
     m.add_class::<DsaParameters>()?;
+    m.add_class::<DsaPrivateNumbers>()?;
+    m.add_class::<DsaPublicNumbers>()?;
+    m.add_class::<DsaParameterNumbers>()?;
 
     Ok(m)
 }

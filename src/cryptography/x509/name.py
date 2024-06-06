@@ -132,10 +132,7 @@ class NameAttribute:
             if not isinstance(value, str):
                 raise TypeError("value argument must be a str")
 
-        if (
-            oid == NameOID.COUNTRY_NAME
-            or oid == NameOID.JURISDICTION_COUNTRY_NAME
-        ):
+        if oid in (NameOID.COUNTRY_NAME, NameOID.JURISDICTION_COUNTRY_NAME):
             assert isinstance(value, str)
             c_len = len(value.encode("utf8"))
             if c_len != 2 and _validate is True:
@@ -266,14 +263,12 @@ class RelativeDistinguishedName:
 
 class Name:
     @typing.overload
-    def __init__(self, attributes: typing.Iterable[NameAttribute]) -> None:
-        ...
+    def __init__(self, attributes: typing.Iterable[NameAttribute]) -> None: ...
 
     @typing.overload
     def __init__(
         self, attributes: typing.Iterable[RelativeDistinguishedName]
-    ) -> None:
-        ...
+    ) -> None: ...
 
     def __init__(
         self,
@@ -419,6 +414,10 @@ class _RFC4514NameParser:
         we parse it, we need to reverse again to get the RDNs on the
         correct order.
         """
+
+        if not self._has_data():
+            return Name([])
+
         rdns = [self._parse_rdn()]
 
         while self._has_data():

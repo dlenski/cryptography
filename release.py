@@ -8,6 +8,7 @@ import subprocess
 
 import click
 import tomllib
+from packaging.version import Version
 
 
 def run(*args: str) -> None:
@@ -21,41 +22,38 @@ def cli():
 
 
 @cli.command()
-@click.argument("version")
-def release(version: str) -> None:
-    """
-    ``version`` should be a string like '0.4' or '1.0'.
-    """
+def release() -> None:
     base_dir = pathlib.Path(__file__).parent
     with (base_dir / "pyproject.toml").open("rb") as f:
         pyproject = tomllib.load(f)
-        pyproject_version = pyproject["project"]["version"]
+        version = pyproject["project"]["version"]
 
-    if version != pyproject_version:
+    if Version(version).is_prerelease:
         raise RuntimeError(
-            f"Version mismatch: pyproject.toml has {pyproject_version}"
+            f"Can't release, pyproject.toml version is pre-release: {version}"
         )
 
     # Tag and push the tag (this will trigger the wheel builder in Actions)
     run("git", "tag", "-s", version, "-m", f"{version} release")
-    run("git", "push", "--tags")
+    run("git", "push", "--tags", "git@github.com:pyca/cryptography.git")
+
+
+def replace_pattern(p: pathlib.Path, pattern: str, replacement: str) -> None:
+    content = p.read_text()
+    match = re.search(pattern, content, re.MULTILINE)
+    assert match is not None
+
+    start, end = match.span()
+    new_content = content[:start] + replacement + content[end:]
+    p.write_text(new_content)
 
 
 def replace_version(
     p: pathlib.Path, variable_name: str, new_version: str
 ) -> None:
-    content = p.read_text()
-
-    pattern = rf"^{variable_name}\s*=\s*.*$"
-    match = re.search(pattern, content, re.MULTILINE)
-    assert match is not None
-
-    start, end = match.span()
-    new_content = (
-        content[:start] + f'{variable_name} = "{new_version}"' + content[end:]
+    replace_pattern(
+        p, rf"^{variable_name}\s*=\s*.*$", f'{variable_name} = "{new_version}"'
     )
-
-    p.write_text(new_content)
 
 
 @cli.command()
@@ -77,6 +75,19 @@ def bump_version(new_version: str) -> None:
         "__version__",
         new_version,
     )
+
+    if Version(new_version).is_prerelease:
+        replace_pattern(
+            base_dir / "pyproject.toml",
+            r'"cryptography_vectors(==.*?)?"',
+            '"cryptography_vectors"',
+        )
+    else:
+        replace_pattern(
+            base_dir / "pyproject.toml",
+            r'"cryptography_vectors(==.*?)?"',
+            f'"cryptography_vectors=={new_version}"',
+        )
 
 
 if __name__ == "__main__":

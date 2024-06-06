@@ -2,9 +2,11 @@
 // 2.0, and the BSD License. See the LICENSE file in the root of this repository
 // for complete details.
 
-use crate::{cvt, cvt_p, OpenSSLResult};
-use foreign_types_shared::{ForeignType, ForeignTypeRef};
 use std::ptr;
+
+use foreign_types_shared::{ForeignType, ForeignTypeRef};
+
+use crate::{cvt, cvt_p, OpenSSLResult};
 
 foreign_types::foreign_type! {
     type CType = ffi::HMAC_CTX;
@@ -20,6 +22,9 @@ unsafe impl Sync for Hmac {}
 unsafe impl Send for Hmac {}
 
 impl Hmac {
+    // On BoringSSL, the length is a size_t, so the length conversion is a
+    // no-op.
+    #[cfg_attr(CRYPTOGRAPHY_IS_BORINGSSL, allow(clippy::useless_conversion))]
     pub fn new(key: &[u8], md: openssl::hash::MessageDigest) -> OpenSSLResult<Hmac> {
         // SAFETY: All FFI conditions are handled.
         unsafe {

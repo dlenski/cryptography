@@ -78,11 +78,12 @@ class TestOCSPRequest:
             os.path.join("x509", "ocsp", "req-sha1.der"),
             ocsp.load_der_ocsp_request,
         )
+        assert isinstance(req, ocsp.OCSPRequest)
         assert req.issuer_name_hash == (
-            b"8\xcaF\x8c\x07D\x8d\xf4\x81\x96" b"\xc7mmLpQ\x9e`\xa7\xbd"
+            b"8\xcaF\x8c\x07D\x8d\xf4\x81\x96\xc7mmLpQ\x9e`\xa7\xbd"
         )
         assert req.issuer_key_hash == (
-            b"yu\xbb\x84:\xcb,\xdez\t\xbe1" b"\x1bC\xbc\x1c*MSX"
+            b"yu\xbb\x84:\xcb,\xdez\t\xbe1\x1bC\xbc\x1c*MSX"
         )
         assert isinstance(req.hash_algorithm, hashes.SHA1)
         assert req.serial_number == int(
@@ -1120,6 +1121,7 @@ class TestOCSPResponse:
             os.path.join("x509", "letsencryptx3.pem"),
             x509.load_pem_x509_certificate,
         )
+        assert isinstance(resp, ocsp.OCSPResponse)
         assert resp.response_status == ocsp.OCSPResponseStatus.SUCCESSFUL
         assert (
             resp.signature_algorithm_oid
@@ -1177,6 +1179,7 @@ class TestOCSPResponse:
         with pytest.raises(ValueError):
             resp.serial_number
 
+        assert isinstance(next(resp.responses), ocsp.OCSPSingleResponse)
         assert len(list(resp.responses)) == 20
 
     def test_multi_valued_responses(self):

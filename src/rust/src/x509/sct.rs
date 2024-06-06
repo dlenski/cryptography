@@ -2,11 +2,14 @@
 // 2.0, and the BSD License. See the LICENSE file in the root of this repository
 // for complete details.
 
-use crate::error::CryptographyError;
-use crate::types;
-use pyo3::ToPyObject;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
+
+use pyo3::prelude::{PyAnyMethods, PyDictMethods, PyListMethods, PyModuleMethods};
+use pyo3::ToPyObject;
+
+use crate::error::CryptographyError;
+use crate::types;
 
 struct TLSReader<'a> {
     data: &'a [u8],
@@ -71,8 +74,7 @@ impl TryFrom<u8> for HashAlgorithm {
             6 => HashAlgorithm::Sha512,
             _ => {
                 return Err(pyo3::exceptions::PyValueError::new_err(format!(
-                    "Invalid/unsupported hash algorithm for SCT: {}",
-                    value
+                    "Invalid/unsupported hash algorithm for SCT: {value}"
                 )))
             }
         })
@@ -119,8 +121,7 @@ impl TryFrom<u8> for SignatureAlgorithm {
             3 => SignatureAlgorithm::Ecdsa,
             _ => {
                 return Err(pyo3::exceptions::PyValueError::new_err(format!(
-                    "Invalid/unsupported signature algorithm for SCT: {}",
-                    value
+                    "Invalid/unsupported signature algorithm for SCT: {value}"
                 )))
             }
         })
@@ -153,7 +154,7 @@ impl Sct {
     }
 
     #[getter]
-    fn version<'p>(&self, py: pyo3::Python<'p>) -> pyo3::PyResult<&'p pyo3::PyAny> {
+    fn version<'p>(&self, py: pyo3::Python<'p>) -> pyo3::PyResult<pyo3::Bound<'p, pyo3::PyAny>> {
         types::CERTIFICATE_TRANSPARENCY_VERSION_V1.get(py)
     }
 
@@ -163,10 +164,10 @@ impl Sct {
     }
 
     #[getter]
-    fn timestamp<'p>(&self, py: pyo3::Python<'p>) -> pyo3::PyResult<&'p pyo3::PyAny> {
+    fn timestamp<'p>(&self, py: pyo3::Python<'p>) -> pyo3::PyResult<pyo3::Bound<'p, pyo3::PyAny>> {
         let utc = types::DATETIME_TIMEZONE_UTC.get(py)?;
 
-        let kwargs = pyo3::types::PyDict::new(py);
+        let kwargs = pyo3::types::PyDict::new_bound(py);
         kwargs.set_item("microsecond", self.timestamp % 1000 * 1000)?;
         kwargs.set_item("tzinfo", None::<Option<pyo3::PyAny>>)?;
 
@@ -176,11 +177,11 @@ impl Sct {
                 pyo3::intern!(py, "fromtimestamp"),
                 (self.timestamp / 1000, utc),
             )?
-            .call_method("replace", (), Some(kwargs))
+            .call_method("replace", (), Some(&kwargs))
     }
 
     #[getter]
-    fn entry_type<'p>(&self, py: pyo3::Python<'p>) -> pyo3::PyResult<&'p pyo3::PyAny> {
+    fn entry_type<'p>(&self, py: pyo3::Python<'p>) -> pyo3::PyResult<pyo3::Bound<'p, pyo3::PyAny>> {
         Ok(match self.entry_type {
             LogEntryType::Certificate => types::LOG_ENTRY_TYPE_X509_CERTIFICATE.get(py)?,
             LogEntryType::PreCertificate => types::LOG_ENTRY_TYPE_PRE_CERTIFICATE.get(py)?,
@@ -191,14 +192,17 @@ impl Sct {
     fn signature_hash_algorithm<'p>(
         &self,
         py: pyo3::Python<'p>,
-    ) -> pyo3::PyResult<&'p pyo3::PyAny> {
+    ) -> pyo3::PyResult<pyo3::Bound<'p, pyo3::PyAny>> {
         types::HASHES_MODULE
             .get(py)?
             .call_method0(self.hash_algorithm.to_attr())
     }
 
     #[getter]
-    fn signature_algorithm<'p>(&self, py: pyo3::Python<'p>) -> pyo3::PyResult<&'p pyo3::PyAny> {
+    fn signature_algorithm<'p>(
+        &self,
+        py: pyo3::Python<'p>,
+    ) -> pyo3::PyResult<pyo3::Bound<'p, pyo3::PyAny>> {
         types::SIGNATURE_ALGORITHM
             .get(py)?
             .getattr(self.signature_algorithm.to_attr())
@@ -222,7 +226,7 @@ pub(crate) fn parse_scts(
 ) -> Result<pyo3::PyObject, CryptographyError> {
     let mut reader = TLSReader::new(data).read_length_prefixed()?;
 
-    let py_scts = pyo3::types::PyList::empty(py);
+    let py_scts = pyo3::types::PyList::empty_bound(py);
     while !reader.is_empty() {
         let mut sct_data = reader.read_length_prefixed()?;
         let raw_sct_data = sct_data.data.to_vec();
@@ -250,12 +254,14 @@ pub(crate) fn parse_scts(
             extension_bytes,
             sct_data: raw_sct_data,
         };
-        py_scts.append(pyo3::PyCell::new(py, sct)?)?;
+        py_scts.append(pyo3::Bound::new(py, sct)?)?;
     }
     Ok(py_scts.to_object(py))
 }
 
-pub(crate) fn add_to_module(module: &pyo3::prelude::PyModule) -> pyo3::PyResult<()> {
+pub(crate) fn add_to_module(
+    module: &pyo3::Bound<'_, pyo3::prelude::PyModule>,
+) -> pyo3::PyResult<()> {
     module.add_class::<Sct>()?;
 
     Ok(())

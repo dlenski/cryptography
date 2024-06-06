@@ -6,6 +6,7 @@ use crate::{certificate, common, csr, name};
 
 pub const PKCS7_DATA_OID: asn1::ObjectIdentifier = asn1::oid!(1, 2, 840, 113549, 1, 7, 1);
 pub const PKCS7_SIGNED_DATA_OID: asn1::ObjectIdentifier = asn1::oid!(1, 2, 840, 113549, 1, 7, 2);
+pub const PKCS7_ENCRYPTED_DATA_OID: asn1::ObjectIdentifier = asn1::oid!(1, 2, 840, 113549, 1, 7, 6);
 
 #[derive(asn1::Asn1Write)]
 pub struct ContentInfo<'a> {
@@ -18,9 +19,9 @@ pub struct ContentInfo<'a> {
 #[derive(asn1::Asn1DefinedByWrite)]
 pub enum Content<'a> {
     #[defined_by(PKCS7_SIGNED_DATA_OID)]
-    SignedData(asn1::Explicit<'a, Box<SignedData<'a>>, 0>),
+    SignedData(asn1::Explicit<Box<SignedData<'a>>, 0>),
     #[defined_by(PKCS7_DATA_OID)]
-    Data(Option<asn1::Explicit<'a, &'a [u8], 0>>),
+    Data(Option<asn1::Explicit<&'a [u8], 0>>),
 }
 
 #[derive(asn1::Asn1Write)]
@@ -57,4 +58,10 @@ pub struct SignerInfo<'a> {
 pub struct IssuerAndSerialNumber<'a> {
     pub issuer: name::Name<'a>,
     pub serial_number: asn1::BigInt<'a>,
+}
+
+#[derive(asn1::Asn1Write)]
+pub struct DigestInfo<'a> {
+    pub algorithm: common::AlgorithmIdentifier<'a>,
+    pub digest: &'a [u8],
 }

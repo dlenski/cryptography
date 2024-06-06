@@ -187,6 +187,12 @@ Algorithms
 
 .. class:: TripleDES(key)
 
+    .. warning::
+
+        This algorithm has been deprecated and moved to the :doc:`/hazmat/decrepit/index`
+        module. If you need to continue using it then update your code to
+        use the new module path. It will be removed from this namespace in 48.0.0.
+
     Triple DES (Data Encryption Standard), sometimes referred to as 3DES, is a
     block cipher standardized by NIST. Triple DES has known crypto-analytic
     flaws, however none of them currently enable a practical attack.
@@ -205,6 +211,12 @@ Algorithms
 
     .. versionadded:: 0.2
 
+    .. warning::
+
+        This algorithm has been deprecated and moved to the :doc:`/hazmat/decrepit/index`
+        module. If you need to continue using it then update your code to
+        use the new module path. It will be removed from this namespace in 45.0.0.
+
     CAST5 (also known as CAST-128) is a block cipher approved for use in the
     Canadian government by the `Communications Security Establishment`_. It is
     a variable key length cipher and supports keys from 40-128 :term:`bits` in
@@ -217,6 +229,12 @@ Algorithms
 .. class:: SEED(key)
 
     .. versionadded:: 0.4
+
+    .. warning::
+
+        This algorithm has been deprecated and moved to the :doc:`/hazmat/decrepit/index`
+        module. If you need to continue using it then update your code to
+        use the new module path. It will be removed from this namespace in 45.0.0.
 
     SEED is a block cipher developed by the Korea Information Security Agency
     (KISA). It is defined in :rfc:`4269` and is used broadly throughout South
@@ -252,6 +270,12 @@ Weak ciphers
 
 .. class:: Blowfish(key)
 
+    .. warning::
+
+        This algorithm has been deprecated and moved to the :doc:`/hazmat/decrepit/index`
+        module. If you need to continue using it then update your code to
+        use the new module path. It will be removed from this namespace in 45.0.0.
+
     Blowfish is a block cipher developed by Bruce Schneier. It is known to be
     susceptible to attacks when using weak keys. The author has recommended
     that users of Blowfish move to newer algorithms such as :class:`AES`.
@@ -261,6 +285,12 @@ Weak ciphers
     :type key: :term:`bytes-like`
 
 .. class:: ARC4(key)
+
+    .. warning::
+
+        This algorithm has been deprecated and moved to the :doc:`/hazmat/decrepit/index`
+        module. If you need to continue using it then update your code to
+        use the new module path. It will be removed from this namespace in 48.0.0.
 
     ARC4 (Alleged RC4) is a stream cipher with serious weaknesses in its
     initial stream output. Its use is strongly discouraged. ARC4 does not use
@@ -283,6 +313,12 @@ Weak ciphers
         b'a secret message'
 
 .. class:: IDEA(key)
+
+    .. warning::
+
+        This algorithm has been deprecated and moved to the :doc:`/hazmat/decrepit/index`
+        module. If you need to continue using it then update your code to
+        use the new module path. It will be removed from this namespace in 45.0.0.
 
     IDEA (`International Data Encryption Algorithm`_) is a block cipher created
     in 1991. It is an optional component of the `OpenPGP`_ standard. This cipher
@@ -846,14 +882,14 @@ Exceptions
 
 
 .. _`described by Colin Percival`: https://www.daemonology.net/blog/2009-06-11-cryptographic-right-answers.html
-.. _`recommends a 96-bit IV length`: https://csrc.nist.gov/publications/detail/sp/800-38d/final
+.. _`recommends a 96-bit IV length`: https://csrc.nist.gov/pubs/sp/800/38/d/final
 .. _`NIST SP-800-38D`: https://csrc.nist.gov/publications/detail/sp/800-38d/final
 .. _`Communications Security Establishment`: https://www.cse-cst.gc.ca
 .. _`encrypt`: https://ssd.eff.org/en/module/what-should-i-know-about-encryption
-.. _`CRYPTREC`: https://www.cryptrec.go.jp/english/
+.. _`CRYPTREC`: https://www.cryptrec.go.jp/en/
 .. _`original version`: https://en.wikipedia.org/wiki/Salsa20#ChaCha_variant
 .. _`significant patterns in the output`: https://en.wikipedia.org/wiki/Block_cipher_mode_of_operation#Electronic_codebook_(ECB)
 .. _`International Data Encryption Algorithm`: https://en.wikipedia.org/wiki/International_Data_Encryption_Algorithm
 .. _`OpenPGP`: https://www.openpgp.org/
 .. _`disk encryption`: https://en.wikipedia.org/wiki/Disk_encryption_theory#XTS
-.. _`draft-ribose-cfrg-sm4-10`: https://tools.ietf.org/html/draft-ribose-cfrg-sm4-10
+.. _`draft-ribose-cfrg-sm4-10`: https://datatracker.ietf.org/doc/html/draft-ribose-cfrg-sm4-10

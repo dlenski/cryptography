@@ -18,6 +18,9 @@ on:
 env:
   PUBLISH_REQUIREMENTS_PATH: .github/requirements/publish-requirements.txt
 
+permissions:
+  contents: read
+
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -27,12 +30,16 @@ jobs:
     if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.event == 'push' && github.event.workflow_run.conclusion == 'success')
     permissions:
       id-token: "write"
+      attestations: "write"
     steps:
-      - uses: actions/setup-python@65d7f2d534ac1bc67fcd62888c5f4f3d2cb2b236 # v4.7.1
+      - run: echo "$EVENT_CONTEXT"
+        env:
+          EVENT_CONTEXT: ${{ toJson(github.event) }}
+      - uses: actions/setup-python@82c7e631bb3cdc910f68e0081d67478d79c6982d # v5.1.0
         with:
           python-version: "3.11"
       - name: Get publish-requirements.txt from repository
-        uses: actions/checkout@f43a0e5ff2bd294095638e18286ca9a3d1956744 # v3.6.0
+        uses: actions/checkout@a5ac7e51b41094c92402da3b24376905380afc29 # v4.1.6
         with:
           sparse-checkout: |
             ${{ env.PUBLISH_REQUIREMENTS_PATH }}
@@ -41,7 +48,7 @@ jobs:
       - name: Install Python dependencies
         run: pip install --require-hashes -r ${{ env.PUBLISH_REQUIREMENTS_PATH }}
 
-      - uses: dawidd6/action-download-artifact@268677152d06ba59fcec7a7f0b5d961b6ccd7e1e # v2.28.0
+      - uses: dawidd6/action-download-artifact@deb3bb83256a78589fef6a7b942e5f2573ad7c13 # v5
         with:
           path: dist/
           run_id: ${{ github.event.inputs.run_id || github.event.workflow_run.id }}
@@ -72,7 +79,7 @@ jobs:
           response.raise_for_status()
           token = response.json()["value"]
 
-          response = requests.post(f"https://{os.environ['PYPI_DOMAIN']}/_/oidc/github/mint-token", json={"token": token})
+          response = requests.post(f"https://{os.environ['PYPI_DOMAIN']}/_/oidc/mint-token", json={"token": token})
           response.raise_for_status()
           pypi_token = response.json()["token"]
 
@@ -83,9 +90,10 @@ jobs:
 
       - run: twine upload --skip-existing $(find dist/ -type f -name 'cryptography*')
 
-      # Do not perform sigstore signatures for things for TestPyPI. This is
-      # because there's nothing that would prevent a malicious PyPI from
-      # serving a signed TestPyPI asset in place of a release intended for
-      # PyPI.
-      - run: sigstore sign $(find dist/ -type f -name 'cryptography*')
+      # Do not perform attestation for things for TestPyPI. This is because
+      # there's nothing that would prevent a malicious PyPI from serving a
+      # signed TestPyPI asset in place of a release intended for PyPI.
+      - uses: actions/attest-build-provenance@49df96e17e918a15956db358890b08e61c704919  # v1.2.0
+        with:
+          subject-path: 'dist/**/cryptography*'
         if: env.TWINE_REPOSITORY == 'pypi'

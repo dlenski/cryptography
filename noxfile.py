@@ -22,9 +22,14 @@ except ImportError:
 nox.options.reuse_existing_virtualenvs = True
 
 
-def install(session: nox.Session, *args: str) -> None:
+def install(
+    session: nox.Session,
+    *args: str,
+    verbose: bool = True,
+) -> None:
+    if verbose:
+        args += ("-v",)
     session.install(
-        "-v",
         "-c",
         "ci-constraints-requirements.txt",
         *args,
@@ -145,10 +150,9 @@ def docs(session: nox.Session) -> None:
         "docs/_build/html",
     )
 
-    # This is in the docs job because `twine check` verifies that the README
-    # is valid reStructuredText.
-    session.run("python", "-m", "build", "--sdist")
-    session.run("twine", "check", "dist/*")
+    session.run(
+        "python3", "-m", "readme_renderer", "README.rst", "-o", "/dev/null"
+    )
 
 
 @nox.session(name="docs-linkcheck")
@@ -175,9 +179,8 @@ def flake(session: nox.Session) -> None:
     )
     install(session, "-e", "vectors/")
 
-    session.run("ruff", ".")
+    session.run("ruff", "check", ".")
     session.run("ruff", "format", "--check", ".")
-    session.run("check-sdist", "--no-isolation")
     session.run(
         "mypy",
         "src/cryptography/",
@@ -186,6 +189,7 @@ def flake(session: nox.Session) -> None:
         "release.py",
         "noxfile.py",
     )
+    session.run("check-sdist", "--no-isolation")
 
 
 @nox.session
@@ -245,6 +249,79 @@ def rust(session: nox.Session) -> None:
                 rust_tests.extend(data["filenames"])
 
         process_rust_coverage(session, rust_tests, prof_location)
+
+
+@nox.session(venv_backend="uv")
+def local(session):
+    pyproject_data = load_pyproject_toml()
+    test_dependencies = pyproject_data["project"]["optional-dependencies"][
+        "test"
+    ]
+    test_dependencies.remove("cryptography_vectors")
+    install(
+        session,
+        *pyproject_data["build-system"]["requires"],
+        *pyproject_data["project"]["optional-dependencies"]["pep8test"],
+        *test_dependencies,
+        *pyproject_data["project"]["optional-dependencies"]["ssh"],
+        *pyproject_data["project"]["optional-dependencies"]["nox"],
+        "./vectors/",
+        verbose=False,
+    )
+
+    session.run("ruff", "format", ".")
+    session.run("ruff", "check", ".")
+
+    with session.chdir("src/rust/"):
+        session.run("cargo", "fmt", "--all", external=True)
+        session.run("cargo", "check", "--all", "--tests", external=True)
+        session.run(
+            "cargo",
+            "clippy",
+            "--all",
+            "--",
+            "-D",
+            "warnings",
+            external=True,
+        )
+
+    session.run(
+        "mypy",
+        "src/cryptography/",
+        "vectors/cryptography_vectors/",
+        "tests/",
+        "release.py",
+        "noxfile.py",
+    )
+
+    install(
+        session,
+        # Needed until https://github.com/astral-sh/uv/issues/2152 is fixed
+        "--reinstall-package",
+        "cryptography",
+        "--refresh-package",
+        "cryptography",
+        ".",
+    )
+
+    if session.posargs:
+        tests = session.posargs
+    else:
+        tests = ["tests/"]
+
+    session.run(
+        "pytest",
+        "-n",
+        "auto",
+        "--dist=worksteal",
+        "--durations=10",
+        *tests,
+    )
+
+    with session.chdir("src/rust/"):
+        session.run(
+            "cargo", "test", "--no-default-features", "--all", external=True
+        )
 
 
 LCOV_SOURCEFILE_RE = re.compile(

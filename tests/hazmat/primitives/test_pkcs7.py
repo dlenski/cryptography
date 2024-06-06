@@ -11,6 +11,7 @@ import pytest
 
 from cryptography import x509
 from cryptography.exceptions import _Reasons
+from cryptography.hazmat.bindings._rust import openssl as rust_openssl
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519, padding, rsa
 from cryptography.hazmat.primitives.serialization import pkcs7
@@ -89,6 +90,12 @@ class TestPKCS7Loading:
                 mode="rb",
             )
 
+    def test_load_pkcs7_empty_certificates(self):
+        der = b"\x30\x0b\x06\x09\x2a\x86\x48\x86\xf7\x0d\x01\x07\x02"
+
+        with pytest.raises(ValueError):
+            pkcs7.load_der_pkcs7_certificates(der)
+
 
 # We have no public verification API and won't be adding one until we get
 # some requirements from users so this function exists to give us basic
@@ -142,7 +149,7 @@ def _pkcs7_verify(encoding, sig, msg, certs, options, backend):
     backend.openssl_assert(res == 1)
     # OpenSSL 3.0 leaves a random bio error on the stack:
     # https://github.com/openssl/openssl/issues/16681
-    if backend._lib.CRYPTOGRAPHY_OPENSSL_300_OR_GREATER:
+    if rust_openssl.CRYPTOGRAPHY_OPENSSL_300_OR_GREATER:
         backend._consume_errors()
 
 
@@ -309,11 +316,15 @@ class TestPKCS7Builder:
         # Parse the message to get the signed data, which is the
         # first payload in the message
         message = email.parser.BytesParser().parsebytes(sig)
-        signed_data = message.get_payload()[0].get_payload().encode()
+        payload = message.get_payload()
+        assert isinstance(payload, list)
+        assert isinstance(payload[0], email.message.Message)
+        signed_data = payload[0].get_payload()
+        assert isinstance(signed_data, str)
         _pkcs7_verify(
             serialization.Encoding.SMIME,
             sig,
-            signed_data,
+            signed_data.encode(),
             [cert],
             options,
             backend,
@@ -539,7 +550,10 @@ class TestPKCS7Builder:
         # Parse the message to get the signed data, which is the
         # first payload in the message
         message = email.parser.BytesParser().parsebytes(sig_pem)
-        signed_data = message.get_payload()[0].as_bytes(
+        payload = message.get_payload()
+        assert isinstance(payload, list)
+        assert isinstance(payload[0], email.message.Message)
+        signed_data = payload[0].as_bytes(
             policy=message.policy.clone(linesep="\r\n")
         )
         _pkcs7_verify(
@@ -548,6 +562,50 @@ class TestPKCS7Builder:
             signed_data,
             [cert],
             options,
+            backend,
+        )
+
+    def test_smime_capabilities(self, backend):
+        data = b"hello world"
+        cert, key = _load_cert_key()
+        builder = (
+            pkcs7.PKCS7SignatureBuilder()
+            .set_data(data)
+            .add_signer(cert, key, hashes.SHA256())
+        )
+
+        sig_binary = builder.sign(serialization.Encoding.DER, [])
+
+        # 1.2.840.113549.1.9.15 (SMIMECapabilities) as an ASN.1 DER encoded OID
+        assert b"\x06\t*\x86H\x86\xf7\r\x01\t\x0f" in sig_binary
+
+        # 2.16.840.1.101.3.4.1.42 (aes256-CBC-PAD) as an ASN.1 DER encoded OID
+        aes256_cbc_pad_oid = b"\x06\x09\x60\x86\x48\x01\x65\x03\x04\x01\x2a"
+        # 2.16.840.1.101.3.4.1.22 (aes192-CBC-PAD) as an ASN.1 DER encoded OID
+        aes192_cbc_pad_oid = b"\x06\x09\x60\x86\x48\x01\x65\x03\x04\x01\x16"
+        # 2.16.840.1.101.3.4.1.2 (aes128-CBC-PAD) as an ASN.1 DER encoded OID
+        aes128_cbc_pad_oid = b"\x06\x09\x60\x86\x48\x01\x65\x03\x04\x01\x02"
+
+        # Each algorithm in SMIMECapabilities should be inside its own
+        # SEQUENCE.
+        # This is encoded as SEQUENCE_IDENTIFIER + LENGTH + ALGORITHM_OID.
+        # This tests that each algorithm is indeed encoded inside its own
+        # sequence. See RFC 2633, Appendix A for more details.
+        sequence_identifier = b"\x30"
+        for oid in [
+            aes256_cbc_pad_oid,
+            aes192_cbc_pad_oid,
+            aes128_cbc_pad_oid,
+        ]:
+            len_oid = len(oid).to_bytes(length=1, byteorder="big")
+            assert sequence_identifier + len_oid + oid in sig_binary
+
+        _pkcs7_verify(
+            serialization.Encoding.DER,
+            sig_binary,
+            None,
+            [cert],
+            [],
             backend,
         )
 
@@ -671,9 +729,15 @@ class TestPKCS7Builder:
                 sig.count(b"\x06\x09\x2a\x86\x48\x86\xf7\x0d\x01\x01\x08") == 1
             )
         else:
-            # This should be a pkcs1 sha512 signature
+            # This should be a pkcs1 RSA signature, which uses the
+            # `rsaEncryption` OID (1.2.840.113549.1.1.1) no matter which
+            # digest algorithm is used.
+            # See RFC 3370 section 3.2 for more details.
+            # This OID appears twice, once in the certificate itself and
+            # another in the SignerInfo data structure in the
+            # `digest_encryption_algorithm` field.
             assert (
-                sig.count(b"\x06\x09\x2A\x86\x48\x86\xF7\x0D\x01\x01\x0D") == 1
+                sig.count(b"\x06\x09\x2a\x86\x48\x86\xf7\x0d\x01\x01\x01") == 2
             )
             _pkcs7_verify(
                 serialization.Encoding.DER,
@@ -916,3 +980,16 @@ class TestPKCS7SerializeCerts:
                 certs,
                 "not an encoding",  # type: ignore[arg-type]
             )
+
+
+@pytest.mark.supported(
+    only_if=lambda backend: not backend.pkcs7_supported(),
+    skip_message="Requires OpenSSL without PKCS7 support (BoringSSL)",
+)
+class TestPKCS7Unsupported:
+    def test_pkcs7_functions_unsupported(self):
+        with raises_unsupported_algorithm(_Reasons.UNSUPPORTED_SERIALIZATION):
+            pkcs7.load_der_pkcs7_certificates(b"nonsense")
+
+        with raises_unsupported_algorithm(_Reasons.UNSUPPORTED_SERIALIZATION):
+            pkcs7.load_pem_pkcs7_certificates(b"nonsense")

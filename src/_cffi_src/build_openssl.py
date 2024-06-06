@@ -21,12 +21,9 @@ ffi = build_ffi_for_binding(
     modules=[
         # This goes first so we can define some cryptography-wide symbols.
         "cryptography",
-        # Provider comes early as well so we define OSSL_LIB_CTX
-        "provider",
         "asn1",
         "bignum",
         "bio",
-        "cmac",
         "crypto",
         "dh",
         "dsa",
@@ -34,7 +31,6 @@ ffi = build_ffi_for_binding(
         "engine",
         "err",
         "evp",
-        "evp_aead",
         "nid",
         "objects",
         "opensslv",
@@ -48,7 +44,6 @@ ffi = build_ffi_for_binding(
         "x509v3",
         "x509_vfy",
         "pkcs7",
-        "callbacks",
     ],
 )
 

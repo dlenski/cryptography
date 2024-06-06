@@ -7,6 +7,8 @@ use std::path::Path;
 use std::process::Command;
 
 fn main() {
+    println!("cargo:rustc-check-cfg=cfg(python_implementation, values(\"CPython\", \"PyPy\"))");
+
     let target = env::var("TARGET").unwrap();
     let openssl_static = env::var("OPENSSL_STATIC")
         .map(|x| x == "1")
@@ -18,7 +20,7 @@ fn main() {
         // More details at https://github.com/alexcrichton/curl-rust/issues/279.
         if let Some(path) = macos_link_search_path() {
             println!("cargo:rustc-link-lib=clang_rt.osx");
-            println!("cargo:rustc-link-search={}", path);
+            println!("cargo:rustc-link-search={path}");
         }
     }
 
@@ -46,7 +48,7 @@ fn main() {
         "import platform; print(platform.python_implementation(), end='')",
     )
     .unwrap();
-    println!("cargo:rustc-cfg=python_implementation=\"{}\"", python_impl);
+    println!("cargo:rustc-cfg=python_implementation=\"{python_impl}\"");
     let python_includes = run_python_script(
         &python,
         "import os; \
@@ -68,6 +70,13 @@ fn main() {
         .flag_if_supported("-Wconversion")
         .flag_if_supported("-Wno-error=sign-conversion")
         .flag_if_supported("-Wno-unused-parameter");
+
+    // We use the `-fmacro-prefix-map` option to replace the output directory in macros with a dot.
+    // This is because we don't want a potentially random build path to end up in the binary because
+    // CFFI generated code uses the __FILE__ macro in its debug messages.
+    if let Some(out_dir_str) = Path::new(&out_dir).to_str() {
+        build.flag_if_supported(format!("-fmacro-prefix-map={}=.", out_dir_str).as_str());
+    }
 
     for python_include in env::split_paths(&python_includes) {
         build.include(python_include);
@@ -127,7 +136,7 @@ fn macos_link_search_path() -> Option<String> {
     for line in stdout.lines() {
         if line.contains("libraries: =") {
             let path = line.split('=').nth(1)?;
-            return Some(format!("{}/lib/darwin", path));
+            return Some(format!("{path}/lib/darwin"));
         }
     }
 
